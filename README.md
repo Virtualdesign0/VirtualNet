@@ -9,6 +9,6 @@ It gives you a simple way to define packets, validate data, batch traffic, and k
 
 Full documents are here: [Documents](https://virtualdesign0.github.io/VirtualNet/)
 
-You can also find benchmark results there, including comparisons against ByteNet and Blink.
+The documents also include benchmark results against ByteNet and Blink.
 
-Latest release: [Releases](https://github.com/Virtualdesign0/VirtualNet/releases/latest)
+You can download the latest version from [Latest Release](https://github.com/Virtualdesign0/VirtualNet/releases/latest).
