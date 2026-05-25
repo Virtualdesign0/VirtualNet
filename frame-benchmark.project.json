@@ -1,0 +1,103 @@
+{
+  "name": "VNetFrameBenchmark",
+  "tree": {
+    "$className": "DataModel",
+
+    "ReplicatedStorage": {
+      "$className": "ReplicatedStorage",
+
+      "VNet": {
+        "$className": "ModuleScript",
+        "$path": "src/VNet/init.luau",
+
+        "Diagnostics": {
+          "$path": "src/VNet/Diagnostics"
+        },
+
+        "Runtime": {
+          "$path": "src/VNet/Runtime"
+        },
+
+        "Schema": {
+          "$path": "src/VNet/Schema"
+        },
+
+        "Signals": {
+          "$path": "src/VNet/Signals"
+        },
+
+        "Wire": {
+          "$path": "src/VNet/Wire"
+        },
+
+        "Benchmarks": {
+          "$className": "Folder",
+
+          "FrameBenchConfig": {
+            "$path": "benchmarks/FrameBenchConfig.luau"
+          },
+
+          "FramePayloads": {
+            "$path": "benchmarks/FramePayloads.luau"
+          },
+
+          "FrameByteCounter": {
+            "$path": "benchmarks/FrameByteCounter.luau"
+          },
+
+          "FrameVNet": {
+            "$path": "benchmarks/FrameVNet.luau"
+          },
+
+          "FrameVNetImmediate": {
+            "$path": "benchmarks/FrameVNetImmediate.luau"
+          },
+
+          "FrameVNetDirect": {
+            "$path": "benchmarks/FrameVNetDirect.luau"
+          },
+
+          "FrameByteNet": {
+            "$path": "benchmarks/FrameByteNet.luau"
+          }
+        }
+      },
+
+      "Blink": {
+        "$className": "Folder",
+
+        "Client": {
+          "$path": "benchmarks/Client.luau"
+        },
+
+        "Server": {
+          "$path": "benchmarks/Server.luau"
+        },
+
+        "Types": {
+          "$path": "benchmarks/Types.luau"
+        }
+      }
+    },
+
+    "ServerScriptService": {
+      "$className": "ServerScriptService",
+
+      "FrameServerBenchmark": {
+        "$path": "benchmarks/FrameServerBenchmark.server.luau"
+      }
+    },
+
+    "StarterPlayer": {
+      "$className": "StarterPlayer",
+
+      "StarterPlayerScripts": {
+        "$className": "StarterPlayerScripts",
+
+        "FrameClientBenchmark": {
+          "$path": "benchmarks/FrameClientBenchmark.client.luau"
+        }
+      }
+    }
+  }
+}
