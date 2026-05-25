@@ -1,0 +1,2903 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+	<title>VNet Documentation</title>
+
+	<meta
+		name="description"
+		content="VNet is a typed Roblox packet layer with shared schemas, compact codecs, requests, batching, audit tools, replication helpers, and roblox-ts support."
+	/>
+
+	<link rel="stylesheet" href="./style.css" />
+</head>
+
+<body>
+	<header class="top-nav">
+		<a class="brand" href="#">
+			<span class="brand-mark" aria-hidden="true"></span>
+			<span>VNet</span>
+		</a>
+
+		<nav class="top-nav-links" aria-label="Main navigation">
+			<a href="#quick-start">Quick Start</a>
+			<a href="#setup">Setup</a>
+			<a href="#schema">Schema</a>
+			<a href="#security">Security</a>
+			<a href="#direction-examples">Examples</a>
+			<a href="#types">VNet.t</a>
+			<a href="#bindable">Bindable</a>
+			<a href="#benchmarks">Benchmarks</a>
+			<a href="#api">API</a>
+			<a href="https://github.com/Virtualdesign0/VirtualNet">GitHub</a>
+		</nav>
+	</header>
+
+	<main class="page">
+		<section class="hero">
+			<div class="hero-copy">
+				<p class="eyebrow">Roblox networking</p>
+				<h1>Typed Roblox networking without the extra ceremony.</h1>
+				<p class="hero-text">
+					Describe a packet once, then use that same contract from the server,
+					the client, and roblox-ts. VNet keeps the packet names, payload shape,
+					and byte layout together, so the networking layer stays readable as
+					the game grows.
+				</p>
+
+				<div class="actions">
+					<a class="button primary" href="#quick-start">Start Reading</a>
+					<a class="button" href="https://github.com/Virtualdesign0/VirtualNet">View GitHub</a>
+				</div>
+			</div>
+
+			<div class="hero-visual" aria-label="Packet flow preview">
+				<div class="flow-line"></div>
+				<div class="node node-server">
+					<span>Server</span>
+					<code>Net.BuyItem.on(...)</code>
+				</div>
+				<div class="node node-schema">
+					<span>Schema</span>
+					<code>amount = "u8"</code>
+				</div>
+				<div class="node node-client">
+					<span>Client</span>
+					<code>Net.BuyItem.send(...)</code>
+				</div>
+				<div class="packet packet-one">u8</div>
+				<div class="packet packet-two">vec3</div>
+				<div class="packet packet-three">delta</div>
+			</div>
+		</section>
+
+		<div class="docs-layout">
+			<aside class="sidebar" aria-label="Documentation navigation">
+				<div class="sidebar-inner">
+					<p>Documentation</p>
+					<a href="#quick-start">Quick Start</a>
+					<a href="#setup">Setup</a>
+					<a href="#runtime-ready">Runtime Ready</a>
+					<a href="#schema">Schema</a>
+					<a href="#lifecycle">Packet Lifecycle</a>
+					<a href="#client-server">Client / Server</a>
+					<a href="#direction-examples">Direction Examples</a>
+					<a href="#security">Security</a>
+					<a href="#typescript">roblox-ts</a>
+					<a href="#audit">Audit</a>
+					<a href="#packet-builders">Packet Builders</a>
+					<a href="#packet-methods">Packet Methods</a>
+					<a href="#local-packets">Local / Prediction</a>
+					<a href="#types">VNet.t</a>
+					<a href="#requests">Requests</a>
+					<a href="#delta">Delta / Sync</a>
+					<a href="#reference-lifecycle">Instances / Refs</a>
+					<a href="#replication">Replication</a>
+					<a href="#bindable">Bindable Transport</a>
+					<a href="#shard">Shard Bridge</a>
+					<a href="#config">Config / Stats</a>
+					<a href="#troubleshooting">Troubleshooting</a>
+					<a href="#benchmarks">Benchmarks</a>
+					<a href="#runtime">Runtime Shape</a>
+					<a href="#api">Full API</a>
+				</div>
+			</aside>
+
+			<div class="content">
+				<section id="quick-start" class="docs-section">
+					<p class="section-label">Quick Start</p>
+					<h2>Put the contract where both sides can read it.</h2>
+					<p>
+						The easiest setup is still the best one: keep one network module in
+						ReplicatedStorage, define the packets there, and require it from
+						both sides. The client sends intent with <code>send</code>; the
+						server listens with <code>on</code>.
+					</p>
+
+					<pre><code>local VNet = require(game.ReplicatedStorage.VNet)
+
+local Net = VNet({
+	BuyItem = {
+		itemId = "string",
+		amount = "u8",
+	},
+
+	Aim = VNet.unreliable("vec3"),
+
+	Inventory = VNet.group({
+		Equip = "string",
+		Changed = VNet.t.array("string"),
+	}),
+})</code></pre>
+				</section>
+
+				<section id="setup" class="docs-section">
+					<p class="section-label">Setup</p>
+					<h2>You only need one shared network module.</h2>
+					<p>
+						There is no generator step to remember. Put the schema in shared
+						code, give the packets you care about stable ids, and keep audit on
+						while you are building so mistakes show up early.
+					</p>
+
+					<div class="detail-grid">
+						<article class="detail-card">
+							<span>01</span>
+							<h3>Place the module</h3>
+							<p>
+								Put <code>VNet</code> somewhere both server and client scripts can
+								require it. Most projects use ReplicatedStorage for this.
+							</p>
+						</article>
+
+						<article class="detail-card">
+							<span>02</span>
+							<h3>Write one schema</h3>
+							<p>
+								Packet names, payloads, groups, ids, and requests live in one
+								file. That makes review and autocomplete much calmer.
+							</p>
+						</article>
+
+						<article class="detail-card">
+							<span>03</span>
+							<h3>Turn audit on</h3>
+							<p>
+								Audit catches duplicate ids, missing ids, and unsupported payload
+								shapes before real traffic starts using them.
+							</p>
+						</article>
+					</div>
+
+					<pre><code>-- ReplicatedStorage/Shared/Network.luau
+local VNet = require(game.ReplicatedStorage.VNet)
+
+local schema = {
+	BuyItem = VNet.with({
+		itemId = "string",
+		amount = "u8",
+	}, {
+		id = 10,
+	}),
+
+	Aim = VNet.unreliable("qnormal_i16", {
+		id = 11,
+	}),
+}
+
+return VNet(schema, {
+	audit = true,
+	requireExplicitIds = true,
+})</code></pre>
+				</section>
+
+				<section id="runtime-ready" class="docs-section">
+					<p class="section-label">Runtime Ready</p>
+					<h2>Use the ready flag as a startup guard.</h2>
+					<p>
+						When <code>require(VNet)</code> returns, VNet has already tried to
+						create or find the <code>_VNet</code> remotes and connect the receive
+						handlers. Check <code>VNet.ready</code> or <code>VNet.isReady()</code>
+						before building gameplay network modules that depend on those remotes.
+					</p>
+
+					<div class="card-grid two">
+						<article class="doc-card">
+							<h3>Simple guard</h3>
+							<pre><code>local VNet = require(game.ReplicatedStorage.VNet)
+
+if not VNet.ready then
+	error("[Game]: VNet did not finish loading.")
+end
+
+local Net = VNet({
+	BuyItem = {
+		itemId = "string",
+		amount = "u8",
+	},
+})</code></pre>
+						</article>
+
+						<article class="doc-card">
+							<h3>Function form</h3>
+							<pre><code>local VNet = require(game.ReplicatedStorage.VNet)
+
+if not VNet.isReady() then
+	return
+end
+
+Net.Attack.on(function(player, data)
+	Combat.handleAttack(player, data)
+end)</code></pre>
+						</article>
+					</div>
+
+					<div class="note-grid">
+						<div>
+							<strong>What true means</strong>
+							<p>
+								The runtime started in a live game, the remotes are available, and
+								the reliable and fast receive handlers are connected.
+							</p>
+						</div>
+
+						<div>
+							<strong>What false means</strong>
+							<p>
+								VNet was required somewhere the runtime did not start, such as a
+								tooling script, edit-time environment, or a setup problem.
+							</p>
+						</div>
+					</div>
+				</section>
+
+				<section id="schema" class="docs-section">
+					<p class="section-label">Schema</p>
+					<h2>The schema is the part you come back to later.</h2>
+					<p>
+						Each key is a packet name, and each value describes what that packet
+						carries. Use a string for a simple value, a table for an object
+						payload, and <code>VNet.t</code> when the field needs bounds,
+						precision, variants, refs, or extra rules.
+					</p>
+
+					<div class="card-grid three">
+						<article class="doc-card">
+							<h3>Object payload</h3>
+							<pre><code>BuyItem = {
+	itemId = "string",
+	amount = "u8",
+}</code></pre>
+						</article>
+
+						<article class="doc-card">
+							<h3>Single value</h3>
+							<pre><code>Aim = VNet.unreliable("vec3")</code></pre>
+						</article>
+
+						<article class="doc-card">
+							<h3>Grouped packets</h3>
+							<pre><code>Inventory = VNet.group({
+	Equip = "string",
+	Changed = VNet.t.array("string"),
+})</code></pre>
+						</article>
+					</div>
+				</section>
+
+				<section id="lifecycle" class="docs-section">
+					<p class="section-label">Packet Lifecycle</p>
+					<h2>One send goes through the same predictable path.</h2>
+					<p>
+						You call <code>send</code>; VNet checks the value, packs it, sends it,
+						and decodes it on the other side using the same schema. That is the
+						main point: the code you read is the contract the runtime follows.
+					</p>
+
+					<div class="timeline">
+						<article>
+							<span>1</span>
+							<h3>Reads schema</h3>
+							<p>Type strings and helpers become the packet's send plan.</p>
+						</article>
+
+						<article>
+							<span>2</span>
+							<h3>Checks value</h3>
+							<p>Wrong shapes can be rejected before they cross the network.</p>
+						</article>
+
+						<article>
+							<span>3</span>
+							<h3>Packs bytes</h3>
+							<p>Supported fields are written into a compact buffer.</p>
+						</article>
+
+						<article>
+							<span>4</span>
+							<h3>Sends group</h3>
+							<p>Same-frame packets can share one remote fire.</p>
+						</article>
+
+						<article>
+							<span>5</span>
+							<h3>Decodes payload</h3>
+							<p>The receiver gets the shape the schema promised.</p>
+						</article>
+					</div>
+
+					<div class="note-grid">
+						<div>
+							<strong>Good packed shapes</strong>
+							<p>
+								Bounded numbers, vectors, colors, enums, flags, fixed tuples,
+								delta fields, and bounded arrays.
+							</p>
+						</div>
+
+						<div>
+							<strong>Risky shapes</strong>
+							<p>
+								Loose tables, unbounded values, and anything that does not have
+								a clear binary shape.
+							</p>
+						</div>
+					</div>
+				</section>
+
+				<section id="client-server" class="docs-section">
+					<p class="section-label">Client / Server</p>
+					<h2>The client asks; the server decides.</h2>
+					<p>
+						A shared schema keeps packets clean, but it does not make the client
+						authoritative. Let the client say what it wants to do, then check
+						money, cooldowns, distance, ownership, and permissions on the server.
+					</p>
+
+					<div class="card-grid two">
+						<article class="doc-card">
+							<h3>Client</h3>
+							<pre><code>Net.BuyItem.send({
+	itemId = "Sword",
+	amount = 1,
+})
+
+Net.Aim.send(
+	workspace.CurrentCamera.CFrame.LookVector
+)</code></pre>
+						</article>
+
+						<article class="doc-card">
+							<h3>Server</h3>
+							<pre><code>Net.BuyItem.on(function(player, data)
+	if not Shop.canBuy(player, data.itemId) then
+		return
+	end
+
+	Shop.buy(player, data.itemId, data.amount)
+end)</code></pre>
+						</article>
+					</div>
+				</section>
+
+				<section id="direction-examples" class="docs-section">
+					<p class="section-label">Direction Examples</p>
+					<h2>Client-to-server and server-to-client have different jobs.</h2>
+					<p>
+						Client packets usually describe intent: attack this target, buy this
+						item, open this door. Server packets describe results: show damage,
+						update inventory, start a round. That is why server listeners receive
+						the <code>player</code>, and server sends use <code>to</code>,
+						<code>all</code>, <code>list</code>, or <code>except</code>.
+					</p>
+
+					<div class="card-grid three">
+						<article class="doc-card">
+							<h3>Shared schema</h3>
+							<pre><code>local Net = VNet({
+	AttackRequest = {
+		targetId = "u32",
+		weaponId = "u16",
+	},
+
+	DamagePopup = {
+		targetId = "u32",
+		amount = "u16",
+		critical = "bool",
+	},
+
+	MatchMessage = "string",
+})</code></pre>
+						</article>
+
+						<article class="doc-card">
+							<h3>Client -> Server</h3>
+							<pre><code>Net.AttackRequest.send({
+	targetId = targetId,
+	weaponId = equippedWeaponId,
+})
+
+Net.DamagePopup.on(function(data)
+	DamageNumbers.show(
+		data.targetId,
+		data.amount,
+		data.critical
+	)
+end)</code></pre>
+						</article>
+
+						<article class="doc-card">
+							<h3>Server -> Client</h3>
+							<pre><code>Net.AttackRequest.on(function(player, data)
+	if not Combat.canHit(player, data.targetId) then
+		return
+	end
+
+	local amount = Combat.damage(player, data.targetId)
+
+	Net.DamagePopup.to(player, {
+		targetId = data.targetId,
+		amount = amount,
+		critical = false,
+	})
+end)
+
+Net.MatchMessage.all("Boss spawned")</code></pre>
+						</article>
+					</div>
+
+					<div class="method-list">
+						<div><code>packet.to(player, payload)</code><span>Send to one player.</span></div>
+						<div><code>packet.all(payload)</code><span>Send to every player.</span></div>
+						<div><code>packet.list(players, payload)</code><span>Send to a chosen player list.</span></div>
+						<div><code>packet.except(player, payload)</code><span>Send to everyone except one player.</span></div>
+					</div>
+				</section>
+
+				<section id="security" class="docs-section">
+					<p class="section-label">Security</p>
+					<h2>Types keep packets honest; server code keeps the game fair.</h2>
+					<p>
+						VNet can tell whether a payload has the right shape. It cannot know
+						whether that player is actually allowed to buy, attack, claim, trade,
+						or move. That decision still belongs in your server code.
+					</p>
+
+					<div class="checklist-grid">
+						<article>
+							<strong>Validate intent</strong>
+							<p>Check currency, cooldowns, distance, ownership, and permissions.</p>
+						</article>
+
+						<article>
+							<strong>Rate limit noisy packets</strong>
+							<p>Attack, cast, trade, and interact packets should have limits.</p>
+						</article>
+
+						<article>
+							<strong>Deduplicate rewards</strong>
+							<p>Use transactions when processing rewards, trades, or inventory grants.</p>
+						</article>
+
+						<article>
+							<strong>Prefer ids for authority</strong>
+							<p>
+								Raw Instances are fine for short-lived replicated targets. For
+								ownership, damage, rewards, and entities, prefer ids or refs.
+							</p>
+						</article>
+					</div>
+
+					<div class="card-grid two">
+						<article class="doc-card">
+							<h3>Packet policy</h3>
+							<pre><code>local AttackRequest = VNet.packet("AttackRequest", {
+	target = VNet.t.entityId,
+	weaponId = "u16",
+}, {
+	rate = "10/s",
+	burst = 3,
+
+	validate = function(player, data)
+		return Combat.canAttack(player, data.target)
+	end,
+
+	onViolation = "warn",
+})</code></pre>
+						</article>
+
+						<article class="doc-card">
+							<h3>Transaction packet</h3>
+							<pre><code>ClaimReward = VNet.transaction("ClaimReward", {
+	idempotencyKey = "u32",
+	rewardId = "u16",
+})
+
+Net.ClaimReward.on(function(player, data)
+	Rewards.claim(player, data.rewardId)
+end)</code></pre>
+						</article>
+					</div>
+				</section>
+
+				<section id="typescript" class="docs-section">
+					<p class="section-label">roblox-ts</p>
+					<h2>roblox-ts uses the same contract.</h2>
+					<p>
+						The package includes <code>index.d.ts</code>, so roblox-ts can read
+						the schema and autocomplete payloads. Use <code>VNet.client</code>
+						in client files and <code>VNet.server</code> in server files; the
+						packet names stay the same.
+					</p>
+
+					<pre><code>import VNet from "shared/VNet";
+
+const schema = {
+	BuyItem: {
+		itemId: "string",
+		amount: "u8",
+	},
+	Aim: VNet.unreliable("vec3"),
+} as const;
+
+const ClientNet = VNet.client(schema);
+const ServerNet = VNet.server(schema);
+
+ClientNet.BuyItem.send({
+	itemId: "Sword",
+	amount: 1,
+});</code></pre>
+				</section>
+
+				<section id="audit" class="docs-section">
+					<p class="section-label">Audit</p>
+					<h2>Let audit complain before players do.</h2>
+					<p>
+						Audit is a fast sanity check for the schema. Run it while building to
+						catch duplicate ids, missing explicit ids, invalid payloads, and
+						shapes that cannot use the packed codec.
+					</p>
+
+					<pre><code>local report = VNet.audit(schema, {
+	requireExplicitIds = true,
+})
+
+if not report.ok then
+	error(table.concat(report.errors, "\n"))
+end
+
+local Net = VNet(schema)</code></pre>
+				</section>
+
+				<section id="packet-builders" class="docs-section">
+					<p class="section-label">Packet Builders</p>
+					<h2>Pick the packet behavior at the schema.</h2>
+					<p>
+						Most packets can be plain reliable packets. Use wrappers when the
+						packet needs a different delivery path, such as fast unreliable input,
+						immediate one-off actions, or a thinner direct path.
+					</p>
+
+					<div class="card-grid two">
+						<article class="doc-card">
+							<h3>Reliable</h3>
+							<pre><code>Purchase = VNet.reliable({
+	itemId = "string",
+	amount = "u8",
+})</code></pre>
+						</article>
+
+						<article class="doc-card">
+							<h3>Unreliable / Fast</h3>
+							<pre><code>Aim = VNet.unreliable("vec3")
+Aim = VNet.fast("vec3")</code></pre>
+						</article>
+
+						<article class="doc-card">
+							<h3>Instant</h3>
+							<pre><code>Parry = VNet.instant({
+	targetId = "u32",
+	startedAt = "f64",
+})</code></pre>
+						</article>
+
+						<article class="doc-card">
+							<h3>Direct</h3>
+							<pre><code>InputTick = VNet.direct({
+	seq = "u32",
+	buttons = "u8",
+})</code></pre>
+						</article>
+
+						<article class="doc-card">
+							<h3>Options</h3>
+							<pre><code>Hit = VNet.with({
+	targetId = "u32",
+	damage = "u16",
+}, {
+	id = 10,
+	immediate = true,
+	defer = true,
+	queueEarly = true,
+})</code></pre>
+						</article>
+					</div>
+				</section>
+
+				<section id="packet-methods" class="docs-section">
+					<p class="section-label">Packet Methods</p>
+					<h2>Most gameplay code only needs these calls.</h2>
+					<p>
+						After the schema is built, packets behave like small typed channels.
+						Send one payload, listen for one payload, or group many same-frame
+						payloads when a system is noisy.
+					</p>
+
+					<div class="method-list">
+						<div><code>send(payload)</code><span>Send one payload.</span></div>
+						<div><code>on(listener)</code><span>Listen for that packet.</span></div>
+						<div><code>many(payloads)</code><span>Queue several payloads for the next flush.</span></div>
+						<div><code>flushMany(payloads)</code><span>Send a batch right now.</span></div>
+						<div><code>onBatch(listener)</code><span>Read a batch in one callback.</span></div>
+						<div><code>to / all / list / except</code><span>Pick which players receive a server packet.</span></div>
+					</div>
+
+					<pre><code>Net.Inventory.Changed.onBatch(function(player, payloads, count)
+	for index = 1, count do
+		print(player.Name, payloads[index])
+	end
+end)</code></pre>
+				</section>
+
+				<section id="local-packets" class="docs-section">
+					<p class="section-label">Local Packets</p>
+					<h2>Local code can use the same packet style.</h2>
+					<p>
+						Some messages should never cross the network: UI events, local
+						controller messages, prediction feedback, and test hooks. Bindable
+						packets keep those local flows shaped like the rest of the network.
+					</p>
+
+					<div class="card-grid two">
+						<article class="doc-card">
+							<h3>Bindable transport</h3>
+							<pre><code>local LocalNet = VNet.bindable({
+	MenuOpened = {
+		menuId = "string",
+	},
+})
+
+LocalNet.MenuOpened.send({
+	menuId = "Inventory",
+})</code></pre>
+						</article>
+
+						<article class="doc-card">
+							<h3>Prediction hooks</h3>
+							<pre><code>local requestId = 0
+
+Net.Attack.predict(function(data)
+	CombatVisuals.swing(data.requestId, data.weaponId)
+end)
+
+Net.Attack.reject(function(reason)
+	CombatVisuals.rollback(reason.requestId)
+	CombatUI.showError(reason.message)
+end)
+
+local function attack(targetId, weaponId)
+	requestId += 1
+
+	Net.Attack.send({
+		requestId = requestId,
+		targetId = targetId,
+		weaponId = weaponId,
+	})
+end</code></pre>
+						</article>
+					</div>
+
+					<div class="card-grid two">
+						<article class="doc-card">
+							<h3>Prediction schema</h3>
+							<pre><code>Attack = VNet.with({
+	requestId = "u32",
+	targetId = "u32",
+	weaponId = "u16",
+}, {
+	rate = "10/s",
+	burst = 3,
+})</code></pre>
+						</article>
+
+						<article class="doc-card">
+							<h3>Server rejection</h3>
+							<pre><code>Net.Attack.on(function(player, data)
+	if not Combat.canAttack(player, data.targetId) then
+		Net.Attack.reject(player, {
+			requestId = data.requestId,
+			message = "Target is too far.",
+		})
+
+		return
+	end
+
+	Combat.applyDamage(player, data.targetId)
+end)</code></pre>
+						</article>
+					</div>
+				</section>
+
+				<section id="types" class="docs-section">
+					<p class="section-label">VNet.t</p>
+					<h2>Start simple, then add stricter types where they matter.</h2>
+					<p>
+						Most fields can be simple strings like <code>"u8"</code>,
+						<code>"string"</code>, or <code>"vec3"</code>. Reach for
+						<code>VNet.t</code> when you want bounds, arrays, maps, optional
+						fields, variants, refs, or custom precision.
+					</p>
+
+					<div class="card-grid two">
+						<article class="doc-card">
+							<h3>Dynamic types</h3>
+							<pre><code>Profile = {
+	name = VNet.t.string(3, 20),
+	recentItems = VNet.t.array("u32", 0, 32),
+	currencies = VNet.t.map("string", "u32"),
+}</code></pre>
+						</article>
+
+						<article class="doc-card">
+							<h3>Variants and flags</h3>
+							<pre><code>Action = VNet.t.variant({
+	Move = { x = "i16", z = "i16" },
+	Attack = { targetId = "u32" },
+})
+
+StateFlags = VNet.t.flags({
+	"Running",
+	"Blocking",
+	"Stunned",
+})</code></pre>
+						</article>
+					</div>
+
+					<div class="type-cloud" aria-label="Supported type names">
+						<span>U4</span><span>U8</span><span>U16</span><span>U24</span><span>U32</span>
+						<span>S8</span><span>S16</span><span>S24</span><span>S32</span>
+						<span>F16</span><span>F24</span><span>F32</span><span>Boolean1</span>
+						<span>Boolean8</span><span>Vector2</span><span>Vector2S16</span>
+						<span>Vector2F24</span><span>Vector2F32</span><span>Vector3S16</span>
+						<span>Vector3F24</span><span>Vector3F32</span><span>CFrameF24U8</span>
+						<span>NumberRange</span><span>NumberSequence</span><span>Color3</span>
+						<span>ColorSequence</span><span>Region3</span><span>Rect</span>
+						<span>BrickColor</span><span>UDim</span><span>UDim2</span>
+					</div>
+
+					<div class="packing-guide">
+						<article class="packing-card">
+							<div>
+								<span class="packing-kicker">U4</span>
+								<h3>Two tiny numbers can share one byte.</h3>
+								<p>
+									Use U4 when each value fits between 0 and 15, such as a small
+									mode id or slot index. The first value uses the low 4 bits, and
+									the second value uses the high 4 bits.
+								</p>
+							</div>
+
+							<div class="byte-row two">
+								<span>low 4 bits</span>
+								<span>high 4 bits</span>
+							</div>
+
+							<pre><code>NibblePair = "U4"
+
+Net.NibblePair.send({ 3, 12 })
+-- byte = 3 + 12 * 16
+-- byte = 195 / 0xC3</code></pre>
+						</article>
+
+						<article class="packing-card">
+							<div>
+								<span class="packing-kicker">Boolean1</span>
+								<h3>Eight yes/no flags in one byte.</h3>
+								<p>
+									Use Boolean1 for input or state flags. It is not a single
+									boolean value; the payload is a list of eight booleans packed
+									into one byte.
+								</p>
+							</div>
+
+							<div class="bit-strip" aria-label="Boolean1 bit layout">
+								<span class="on">1</span>
+								<span>2</span>
+								<span class="on">3</span>
+								<span>4</span>
+								<span>5</span>
+								<span>6</span>
+								<span>7</span>
+								<span class="on">8</span>
+							</div>
+
+							<pre><code>InputFlags = "Boolean1"
+
+Net.InputFlags.send({
+	true, false, true, false,
+	false, false, false, true,
+})
+-- bits 1, 3, and 8 are on
+-- byte = 1 + 4 + 128 = 133</code></pre>
+						</article>
+
+						<article class="packing-card">
+							<div>
+								<span class="packing-kicker">Boolean8</span>
+								<h3>One normal boolean when clarity matters.</h3>
+								<p>
+									Use Boolean8 when the field is simply true or false. Use
+									Boolean1 only when you intentionally want eight flags packed
+									together.
+								</p>
+							</div>
+
+							<div class="byte-row one">
+								<span>0x00 false</span>
+								<span>0x01 true</span>
+							</div>
+
+							<pre><code>IsBlocking = "Boolean8"
+
+Net.IsBlocking.send(true)
+-- true  -> 1 byte: 0x01
+-- false -> 1 byte: 0x00</code></pre>
+						</article>
+					</div>
+				</section>
+
+				<section id="requests" class="docs-section">
+					<p class="section-label">Requests</p>
+					<h2>Use requests when the caller needs a reply.</h2>
+					<p>
+						Requests are for question-and-answer flows: load a profile, ask for a
+						store result, or fetch a small server decision. They are easier to
+						read than pairing one request packet with one response packet by hand.
+					</p>
+
+					<div class="card-grid two">
+						<article class="doc-card">
+							<h3>Define</h3>
+							<pre><code>GetProfile = VNet.request({
+	input = { userId = "u32" },
+	output = { level = "u16", coins = "u32" },
+	requestId = 100,
+	responseId = 101,
+})</code></pre>
+						</article>
+
+						<article class="doc-card">
+							<h3>Handle / invoke</h3>
+							<pre><code>Net.GetProfile:handle(function(player, data)
+	return { level = 20, coins = 5000 }
+end)
+
+local ok, profile = Net.GetProfile:invoke({
+	userId = player.UserId,
+}, { timeout = 5 })</code></pre>
+						</article>
+					</div>
+				</section>
+
+				<section id="delta" class="docs-section">
+					<p class="section-label">Delta / Sync</p>
+					<h2>Send only the fields that changed.</h2>
+					<p>
+						Delta is useful when the client already has a base copy of an entity.
+						Instead of resending the whole state every time, the server sends the
+						few fields that changed and the client merges them into its local
+						table.
+					</p>
+
+					<div class="card-grid two">
+						<article class="doc-card">
+							<h3>Schema</h3>
+							<pre><code>local Net = VNet({
+	EntityState = VNet.delta({
+		health = "u16",
+		shield = "u16",
+		position = "qvec3_i16",
+	}),
+})</code></pre>
+						</article>
+
+						<article class="doc-card">
+							<h3>Server sends changes</h3>
+							<pre><code>local function damageEntity(entityId, amount)
+	local state = EntityStore[entityId]
+
+	state.health = math.max(0, state.health - amount)
+
+	Net.EntityState.sendDelta(entityId, {
+		health = state.health,
+	})
+end
+
+Net.EntityState.toDelta(player, entityId, {
+	health = 80,
+	shield = 20,
+})</code></pre>
+						</article>
+					</div>
+
+					<div class="card-grid two">
+						<article class="doc-card">
+							<h3>Client merges changes</h3>
+							<pre><code>local entities = {}
+
+Net.EntityState.onDelta(function(entityId, changes)
+	local state = entities[entityId]
+
+	if not state then
+		state = {}
+		entities[entityId] = state
+	end
+
+	for name, value in pairs(changes) do
+		state[name] = value
+	end
+
+	EntityVisuals.update(entityId, state)
+end)</code></pre>
+						</article>
+
+						<article class="doc-card">
+							<h3>Targeting delta packets</h3>
+							<pre><code>Net.EntityState.allDelta(entityId, {
+	position = newPosition,
+})
+
+Net.EntityState.listDelta(players, entityId, {
+	shield = 50,
+})
+
+Net.EntityState.exceptDelta(owner, entityId, {
+	health = 0,
+})</code></pre>
+						</article>
+					</div>
+
+					<div class="card-grid two">
+						<article class="doc-card">
+							<h3>Instance references</h3>
+							<pre><code>VNet.Registry.register("Character", character, 101)
+
+HitConfirm = {
+	target = VNet.t.ref("Character"),
+	damage = "u16",
+}</code></pre>
+						</article>
+
+						<article class="doc-card">
+							<h3>Late join sync on server</h3>
+							<pre><code>local Players = game:GetService("Players")
+
+local MatchJoin = VNet.JoinSync.define({
+	"MatchState",
+	"Teams",
+	"Entities",
+	"Inventory",
+}, {
+	name = "Match.Join",
+})
+
+Players.PlayerAdded:Connect(function(player)
+	MatchJoin.start(player, {
+		MatchState = function(target)
+			Net.MatchState.to(target, snapshotMatch())
+		end,
+
+		Teams = function(target)
+			Net.TeamSnapshot.to(target, snapshotTeams())
+		end,
+
+		Entities = function(target)
+			Net.EntitySpawn.flushMany(
+				target,
+				snapshotEntities()
+			)
+		end,
+
+		Inventory = function(target)
+			Net.InventorySnapshot.to(
+				target,
+				snapshotInventory(target)
+			)
+		end,
+	})
+end)</code></pre>
+						</article>
+					</div>
+
+					<div class="note-grid">
+						<div>
+							<strong>What JoinSync solves</strong>
+							<p>
+								A late player did not see the packets that built the current
+								match. JoinSync lets the server replay the important pieces in an
+								order you choose: match data first, teams next, entities after
+								that, then inventory or effects.
+							</p>
+						</div>
+
+						<div>
+							<strong>What the marker means</strong>
+							<p>
+								Each stage handler sends normal VNet packets. VNet flushes those
+								packets, then sends a small reliable marker. When the client sees
+								<code>onStage(stage)</code>, the packets for that stage were sent
+								before the marker.
+							</p>
+						</div>
+					</div>
+
+					<div class="card-grid two">
+						<article class="doc-card">
+							<h3>Client waits for ready</h3>
+							<pre><code>local MatchJoin = VNet.JoinSync.define({
+	"MatchState",
+	"Teams",
+	"Entities",
+	"Inventory",
+}, {
+	name = "Match.Join",
+})
+
+MatchJoin.onStage(function(stage)
+	LoadingScreen.setStep(stage)
+end)
+
+MatchJoin.onDone(function()
+	LoadingScreen.hide()
+	Gameplay.start()
+end)</code></pre>
+						</article>
+
+						<article class="doc-card">
+							<h3>Blocking wait</h3>
+							<pre><code>if not MatchJoin.isDone() then
+	LoadingScreen.show()
+	MatchJoin.wait()
+end
+
+LoadingScreen.hide()
+Gameplay.start()
+
+-- Before another match loading flow:
+MatchJoin.reset()</code></pre>
+						</article>
+					</div>
+
+					<div class="reference-table">
+						<div class="reference-row head">
+							<span>Method</span>
+							<span>Meaning</span>
+						</div>
+
+						<div class="reference-row">
+							<code>define(stages, options)</code>
+							<p>
+								Creates the same named pipeline on server and client. Use a
+								<code>name</code> when you want the connection to be obvious.
+							</p>
+						</div>
+
+						<div class="reference-row">
+							<code>start(player, handlers)</code>
+							<p>
+								Server only. Runs handlers in stage order. A missing handler is
+								okay; VNet still sends that stage marker.
+							</p>
+						</div>
+
+						<div class="reference-row">
+							<code>onStage(stage)</code>
+							<p>
+								Client side. Fires when a stage marker arrives, useful for loading
+								text, progress bars, or enabling one system at a time.
+							</p>
+						</div>
+
+						<div class="reference-row">
+							<code>onDone() / wait()</code>
+							<p>
+								Fires or resumes after the final marker. Start gameplay, hide the
+								loading screen, or allow input here.
+							</p>
+						</div>
+					</div>
+				</section>
+
+				<section id="reference-lifecycle" class="docs-section">
+					<p class="section-label">Instances / Refs</p>
+					<h2>Choose the target type by what the object really is.</h2>
+					<p>
+						Direct Instances, Players, characters, and registry refs all look
+						similar in code, but they solve different problems. A direct Instance
+						uses Roblox's normal RemoteEvent behavior. A registry ref sends your
+						own small id, then the receiver resolves that id from its local
+						registry.
+					</p>
+
+					<div class="note-grid">
+						<div>
+							<strong>Direct replicated Instance</strong>
+							<p>
+								If Roblox already replicates the object to the receiver,
+								<code>VNet.t.instance()</code> is the straightforward choice. It
+								sends the Instance through RemoteEvent normally; it is not a
+								compact id codec.
+							</p>
+						</div>
+
+						<div>
+							<strong>Player characters</strong>
+							<p>
+								If you mean a player's current character model, use
+								<code>VNet.t.character()</code>. VNet resolves it through the
+								player's UserId, so you do not need a custom registry id.
+							</p>
+						</div>
+
+						<div>
+							<strong>NPCs, custom entities</strong>
+							<p>
+								Use <code>VNet.t.ref("Character")</code> or another kind when the
+								target belongs to your own entity system. Register when it spawns,
+								and clean it up when it despawns.
+							</p>
+						</div>
+					</div>
+
+					<div class="reference-table">
+						<div class="reference-row head">
+							<span>Type</span>
+							<span>Use it when</span>
+						</div>
+
+						<div class="reference-row">
+							<code>VNet.t.instance(className?)</code>
+							<p>
+								You want to pass a Roblox Instance directly. Use
+								<code>"BasePart"</code>, <code>"Model"</code>,
+								<code>"Tool"</code>, <code>"ProximityPrompt"</code>, or any other
+								Roblox class name to restrict it with <code>IsA</code>. Leave it
+								empty to accept any replicated Instance.
+							</p>
+						</div>
+
+						<div class="reference-row">
+							<code>VNet.t.player()</code>
+							<p>
+								You want to send a Player. VNet writes the player's
+								<code>UserId</code> and resolves it with
+								<code>Players:GetPlayerByUserId</code> on the receiver.
+							</p>
+						</div>
+
+						<div class="reference-row">
+							<code>VNet.t.character()</code>
+							<p>
+								You want to send a player's current character model. VNet writes
+								the owning player's <code>UserId</code>, then reads
+								<code>player.Character</code> on the receiver.
+							</p>
+						</div>
+
+						<div class="reference-row">
+							<code>VNet.t.ref("Character")</code>
+							<p>
+								You want to send a model from your own registry, such as an NPC,
+								summon, tool, hitbox, or custom entity. You choose the id and
+								register it on both sides.
+							</p>
+						</div>
+					</div>
+
+					<div class="card-grid three">
+						<article class="doc-card">
+							<h3>Send a replicated part</h3>
+							<pre><code>Interact = {
+	target = VNet.t.instance("BasePart"),
+	action = VNet.t.enum({ "Open", "Use" }),
+}
+
+-- Client
+Net.Interact.send({
+	target = workspace.Door.Button,
+	action = "Use",
+})
+
+-- Server
+Net.Interact.on(function(player, data)
+	if not data.target:IsDescendantOf(workspace.Interactables) then
+		return
+	end
+
+	InteractService.use(player, data.target, data.action)
+end)</code></pre>
+						</article>
+
+						<article class="doc-card">
+							<h3>Send a specific model</h3>
+							<pre><code>OpenModel = {
+	target = VNet.t.instance("Model"),
+}
+
+-- Client
+Net.OpenModel.send({
+	target = workspace.Interactables.SecretDoor,
+})
+
+-- Server
+Net.OpenModel.on(function(player, data)
+	if data.target ~= workspace.Interactables.SecretDoor then
+		return
+	end
+
+	DoorService.openFor(player, data.target)
+end)</code></pre>
+						</article>
+
+						<article class="doc-card">
+							<h3>Send a Player</h3>
+							<pre><code>TargetPlayer = {
+	target = VNet.t.player(),
+	reason = "string",
+}
+
+Net.TargetPlayer.send({
+	target = otherPlayer,
+	reason = "Invite",
+})</code></pre>
+						</article>
+
+						<article class="doc-card">
+							<h3>Send a player character</h3>
+							<pre><code>AssistTarget = {
+	target = VNet.t.character(),
+	amount = "u16",
+}
+
+Net.AssistTarget.send({
+	target = player.Character,
+	amount = 25,
+})</code></pre>
+						</article>
+
+						<article class="doc-card">
+							<h3>Send a registered entity</h3>
+							<pre><code>NpcHit = {
+	target = VNet.t.ref("Character"),
+	damage = "u16",
+}
+
+VNet.Registry.register(
+	"Character",
+	npcModel,
+	npcEntityId
+)</code></pre>
+						</article>
+					</div>
+
+					<div class="note-grid">
+						<div>
+							<strong>Easy rule</strong>
+							<p>
+								Already replicated object? Use <code>instance(className)</code>:
+								<code>instance("Model")</code>, <code>instance("BasePart")</code>,
+								or <code>instance()</code> for any Instance.
+								Player object? Use <code>player()</code>. Player's current
+								character? Use <code>character()</code>. Anything you spawned,
+								tracked, and identified yourself? Use <code>ref(kind)</code>.
+							</p>
+						</div>
+
+						<div>
+							<strong>Important edge cases</strong>
+							<p>
+								<code>instance()</code> only works when the receiver already has
+								that Instance replicated. <code>character()</code> can fail if the
+								player has no current character on the receiver.
+							</p>
+						</div>
+					</div>
+
+					<div class="card-grid two">
+						<article class="doc-card">
+							<h3>Track player characters</h3>
+							<pre><code>local Players = game:GetService("Players")
+local cleaners = {}
+
+local function clearCharacter(player)
+	local cleanup = cleaners[player]
+
+	if cleanup then
+		cleanup()
+		cleaners[player] = nil
+	end
+end
+
+local function trackPlayer(player)
+	local function registerCharacter(character)
+		clearCharacter(player)
+
+		cleaners[player] = VNet.Registry.register(
+			"Character",
+			character,
+			player.UserId
+		)
+	end
+
+	player.CharacterAdded:Connect(registerCharacter)
+	player.CharacterRemoving:Connect(function()
+		clearCharacter(player)
+	end)
+
+	if player.Character then
+		registerCharacter(player.Character)
+	end
+end
+
+Players.PlayerAdded:Connect(trackPlayer)
+Players.PlayerRemoving:Connect(clearCharacter)
+
+for _, player in ipairs(Players:GetPlayers()) do
+	trackPlayer(player)
+end</code></pre>
+						</article>
+
+						<article class="doc-card">
+							<h3>Track NPC entities</h3>
+							<pre><code>local function spawnNpc(entityId, model)
+	local cleanup = VNet.Registry.register(
+		"Character",
+		model,
+		entityId
+	)
+
+	model.Destroying:Once(cleanup)
+
+	Net.NpcSpawn.all({
+		id = entityId,
+		template = model.Name,
+	})
+end
+
+Net.HitConfirm.on(function(player, data)
+	-- data.target is the registered Model
+	print(data.target.Name, data.damage)
+end)</code></pre>
+						</article>
+					</div>
+
+					<div class="reference-table">
+						<div class="reference-row head">
+							<span>Rule</span>
+							<span>Why</span>
+						</div>
+
+						<div class="reference-row">
+							<code>Register before use</code>
+							<p>
+								If a packet arrives before the receiver knows the id, decode fails
+								and the packet is dropped.
+							</p>
+						</div>
+
+						<div class="reference-row">
+							<code>Clean both sides</code>
+							<p>
+								Cleanup is local. The server cleaning an id does not automatically
+								clean the client registry.
+							</p>
+						</div>
+
+						<div class="reference-row">
+							<code>Reuse stable ids carefully</code>
+							<p>
+								For player respawns, reuse <code>UserId</code>. For NPCs, reuse an
+								entity id only after the old model is fully despawned.
+							</p>
+						</div>
+					</div>
+				</section>
+
+				<section id="replication" class="docs-section">
+					<p class="section-label">Replication</p>
+					<h2>Use helpers when state keeps changing.</h2>
+					<p>
+						Not every system should be one hand-written packet at a time. These
+						helpers are for state that changes often: entity snapshots, relevance
+						rules, tags, and typed attributes.
+					</p>
+
+					<div class="card-grid two">
+						<article class="doc-card">
+							<h3>Dirty tracked state</h3>
+							<pre><code>local Replicator = VNet.replicator({
+	name = "Entities.State",
+	entityId = VNet.t.u16,
+	state = {
+		transform = VNet.t.qtransform_yaw_i16(100),
+		health = VNet.t.u8,
+		flags = VNet.t.flags({ "Running", "Blocking" }),
+	},
+})
+
+Replicator:Track(npcId, npcState)
+Replicator:Set(npcId, "health", 80)
+Replicator:Flush()</code></pre>
+						</article>
+
+						<article class="doc-card">
+							<h3>Layer and relevance</h3>
+							<pre><code>VNet.Layer.set(player, "Dungeon_12")
+VNet.Layer.set(entityId, "Dungeon_12")
+
+VNet.Relevance.rule("PartyMembers", function(player, entityId)
+	return playerParty[player] == entityParty[entityId]
+end)</code></pre>
+						</article>
+
+						<article class="doc-card">
+							<h3>Tags</h3>
+							<pre><code>local EnemyTags = VNet.Tags.replicate("Enemy", {
+	kind = "Entity",
+})
+
+EnemyTags:Sync(player)</code></pre>
+						</article>
+
+						<article class="doc-card">
+							<h3>Attributes</h3>
+							<pre><code>local HealthAttributes = VNet.Attributes.track(npc, {
+	Health = VNet.t.u8,
+	State = VNet.t.enum({ "Idle", "Attack", "Stunned" }),
+}, {
+	name = "NPC.Attributes",
+	kind = "Entity",
+})</code></pre>
+						</article>
+					</div>
+				</section>
+
+				<section id="bindable" class="docs-section">
+					<p class="section-label">Bindable Transport</p>
+					<h2>Use bindable packets for messages inside one runtime.</h2>
+					<p>
+						<code>VNet.bindable</code> uses the same packet shape without crossing
+						the Roblox network. It is for modules inside the same client or the
+						same server that need to talk cleanly without creating their own
+						BindableEvent layer.
+					</p>
+
+					<div class="note-grid">
+						<div>
+							<strong>Good places to use it</strong>
+							<p>
+								UI events, local controllers, server-side services, test harnesses,
+								and module-to-module messages that should stay local.
+							</p>
+						</div>
+
+						<div>
+							<strong>Not for networking</strong>
+							<p>
+								Bindable packets do not go from client to server. When data needs
+								to cross that boundary, use normal VNet packets.
+							</p>
+						</div>
+					</div>
+
+					<div class="card-grid three">
+						<article class="doc-card">
+							<h3>Define local packets</h3>
+							<pre><code>local UIEvents = VNet.bindable({
+	MenuOpened = {
+		menuId = "string",
+		source = "string",
+	},
+
+	Toast = {
+		text = VNet.t.string(1, 80),
+		kind = VNet.t.enum({ "Info", "Error" }),
+	},
+})</code></pre>
+						</article>
+
+						<article class="doc-card">
+							<h3>Send from one module</h3>
+							<pre><code>local InventoryButton = {}
+
+function InventoryButton.clicked()
+	UIEvents.MenuOpened.send({
+		menuId = "Inventory",
+		source = "Hotbar",
+	})
+end
+
+return InventoryButton</code></pre>
+						</article>
+
+						<article class="doc-card">
+							<h3>Listen from another module</h3>
+							<pre><code>UIEvents.MenuOpened.on(function(data)
+	MenuController.open(data.menuId)
+	Analytics.track("menu_opened", data.source)
+end)
+
+UIEvents.Toast.on(function(data)
+	ToastController.show(data.text, data.kind)
+end)</code></pre>
+						</article>
+					</div>
+
+					<div class="method-list">
+						<div><code>send(payload)</code><span>Fire the local packet in this same runtime.</span></div>
+						<div><code>on(listener)</code><span>Listen from another local module.</span></div>
+						<div><code>once(listener)</code><span>Listen once, then disconnect.</span></div>
+						<div><code>wait()</code><span>Yield until the next local payload arrives.</span></div>
+						<div><code>many(payloads)</code><span>Send several local payloads.</span></div>
+					</div>
+
+				</section>
+
+				<section id="shard" class="docs-section">
+					<p class="section-label">Shard Bridge</p>
+					<h2>Use Shard when another server needs to hear about it.</h2>
+					<p>
+						Shard is the server-to-server side of VNet, built on MessagingService.
+						Use it for party, lobby, match, trade, reward, or queue flows where one
+						server needs to tell another server what happened.
+					</p>
+
+					<div class="note-grid">
+						<div>
+							<strong>What it does</strong>
+							<p>
+								Validates the payload against a schema, publishes it to a
+								MessagingService topic, and lets matching servers listen by packet
+								name instead of parsing loose message tables.
+							</p>
+						</div>
+
+						<div>
+							<strong>What it is not</strong>
+							<p>
+								It is not for high-frequency gameplay replication. Keep movement,
+								combat effects, and normal client traffic on regular VNet packets.
+							</p>
+						</div>
+					</div>
+
+					<div class="card-grid two">
+						<article class="doc-card">
+							<h3>Shared shard schema</h3>
+							<pre><code>local PartyShardSchema = {
+	InviteAccepted = {
+		partyId = "u32",
+		userId = VNet.t.playerId,
+		matchId = "string",
+	},
+
+	TradeLocked = {
+		tradeId = "u32",
+		fromUserId = VNet.t.playerId,
+		toUserId = VNet.t.playerId,
+	},
+}</code></pre>
+						</article>
+
+						<article class="doc-card">
+							<h3>Lobby server sends</h3>
+							<pre><code>local PartyBridge = VNet.Shard.bridge(
+	"Party",
+	PartyShardSchema,
+	{
+		shardId = "lobby",
+		dedupe = true,
+	}
+)
+
+PartyBridge:Send("InviteAccepted", {
+	partyId = 42,
+	userId = player.UserId,
+	matchId = "match-17",
+}, "match-17")</code></pre>
+						</article>
+					</div>
+
+					<div class="card-grid two">
+						<article class="doc-card">
+							<h3>Match server receives</h3>
+							<pre><code>local PartyBridge = VNet.Shard.bridge(
+	"Party",
+	PartyShardSchema,
+	{
+		shardId = "match-17",
+		dedupe = true,
+	}
+)
+
+PartyBridge:On("InviteAccepted", function(data, source)
+	PartyService.addPlayer(
+		data.partyId,
+		data.userId,
+		source
+	)
+end)</code></pre>
+						</article>
+
+						<article class="doc-card">
+							<h3>Manual start / stop</h3>
+							<pre><code>local Bridge = VNet.shard("Trade", TradeSchema, {
+	shardId = "trade",
+	autoStart = false,
+	validate = true,
+})
+
+Bridge:On("TradeLocked", function(data)
+	TradeService.applyLock(data.tradeId)
+end)
+
+Bridge:Start()
+
+game:BindToClose(function()
+	Bridge:Stop()
+end)</code></pre>
+						</article>
+					</div>
+
+					<div class="reference-table">
+						<div class="reference-row head">
+							<span>Option</span>
+							<span>Meaning</span>
+						</div>
+
+						<div class="reference-row">
+							<code>topic</code>
+							<p>
+								Custom MessagingService topic. By default VNet uses
+								<code>VNet.Shard.&lt;name&gt;</code>.
+							</p>
+						</div>
+
+						<div class="reference-row">
+							<code>shardId</code>
+							<p>
+								The local server role or id. A message with a target only runs on
+								bridges whose shardId matches that target.
+							</p>
+						</div>
+
+						<div class="reference-row">
+							<code>dedupe</code>
+							<p>
+								Uses MemoryStore to skip duplicate message ids for the dedupe TTL.
+								Useful for trade, rewards, party, and queue messages.
+							</p>
+						</div>
+
+						<div class="reference-row">
+							<code>echo</code>
+							<p>
+								Defaults to false, so a server ignores its own published messages.
+								Set true only when local echo is useful.
+							</p>
+						</div>
+					</div>
+				</section>
+
+				<section id="config" class="docs-section">
+					<p class="section-label">Config / Stats</p>
+					<h2>Keep the noisy tools on while developing.</h2>
+
+					<pre><code>VNet.configure({
+	validate = true,
+	stats = true,
+	promise = Promise,
+})
+
+VNet.flush()
+
+local stats = VNet.stats()
+print(stats.sentPackets, stats.sentPackedBytes)
+
+VNet.resetStats()</code></pre>
+				</section>
+
+				<section id="troubleshooting" class="docs-section">
+					<p class="section-label">Troubleshooting</p>
+					<h2>When something feels wrong, start here.</h2>
+
+					<div class="reference-table">
+						<div class="reference-row head">
+							<span>Symptom</span>
+							<span>What to check</span>
+						</div>
+
+						<div class="reference-row">
+							<code>Listener never fires</code>
+							<p>
+								Make sure both sides require the same network module and that the
+								packet is in the group you think it is.
+							</p>
+						</div>
+
+						<div class="reference-row">
+							<code>Audit fails</code>
+							<p>
+								Check duplicate ids, missing explicit ids, unsupported payloads,
+								and dynamic values without bounds.
+							</p>
+						</div>
+
+						<div class="reference-row">
+							<code>Request times out</code>
+							<p>
+								Make sure the server registered <code>handle</code>, the ids are
+								unique, and the handler returns before the timeout.
+							</p>
+						</div>
+
+						<div class="reference-row">
+							<code>Map shape is confusing</code>
+							<p>
+								VNet maps are plain Luau tables. In roblox-ts, treat them like
+								dictionaries instead of JavaScript <code>Map</code> objects.
+							</p>
+						</div>
+
+						<div class="reference-row">
+							<code>Prediction needs rollback</code>
+							<p>
+								Use <code>predict</code> for local feedback and
+								<code>reject</code> when the server needs to undo it.
+							</p>
+						</div>
+					</div>
+				</section>
+
+				<section id="benchmarks" class="docs-section">
+					<p class="section-label">Benchmarks</p>
+					<h2>A heavy frame benchmark against Blink and ByteNet.</h2>
+					<p>
+						This run sends 1000 client-to-server fires every frame for 10 seconds
+						with one local client. It compares normal VNet batching,
+						<code>VNet.instant</code>, <code>VNet.direct</code>, generated Blink
+						modules, and ByteNet from <code>ReplicatedStorage.ByteNet</code>.
+						Read it as one extreme traffic case, not a promise that every game
+						will land on the same numbers.
+					</p>
+
+					<div class="benchmark-grid">
+						<article>
+							<span>Booleans</span>
+							<strong>1.01 bytes/msg</strong>
+							<p>Immediate is 3.00, Blink is 2.00, ByteNet is 1.00.</p>
+						</article>
+						<article>
+							<span>Entities</span>
+							<strong>31.01 bytes/msg</strong>
+							<p>Immediate is 33.00, Blink is 32.00, ByteNet is 31.00.</p>
+						</article>
+						<article>
+							<span>Quantized</span>
+							<strong>19.01 bytes/msg</strong>
+							<p>Immediate is 21.00, Blink is 32.00, ByteNet is 31.00.</p>
+						</article>
+						<article>
+							<span>ByteNet</span>
+							<strong>Runs beside Blink</strong>
+							<p>The benchmark includes ByteNet when the module exists in ReplicatedStorage.</p>
+						</article>
+						<article>
+							<span>CPU</span>
+							<strong>Lower callback cost</strong>
+							<p>Normal VNet batches receives, so the server handles far fewer callbacks.</p>
+						</article>
+						<article>
+							<span>Batching</span>
+							<strong>1000 msgs/callback</strong>
+							<p>Normal VNet receives one packed group per frame in this test.</p>
+						</article>
+						<article>
+							<span>Immediate</span>
+							<strong>3 / 33 / 21 B</strong>
+							<p>Immediate sends use the payload plus a 2-byte packet id.</p>
+						</article>
+						<article>
+							<span>Immediate FPS</span>
+							<strong>Direct path</strong>
+							<p>One network fire per call is useful for timing, not noisy state.</p>
+						</article>
+					</div>
+
+					<div class="benchmark-note">
+						<p>
+							The useful part here is not only bytes per message. Normal VNet
+							packs many same-frame sends into one receive path, so the server
+							does far fewer callbacks. That is usually the better shape for
+							movement, entity state, aim, effects, inventory deltas, and other
+							noisy updates.
+						</p>
+						<div class="immediate-compare">
+							<article>
+								<strong>Normal VNet</strong>
+								<p>
+									<code>packet.send</code> writes into the frame queue. VNet then
+									sends one packed group for many same-frame messages.
+								</p>
+							</article>
+							<article>
+								<strong>VNetImmediate</strong>
+								<p>
+									<code>VNet.instant(...)</code> skips the frame queue and sends a
+									single packet now. It saves the frame wait, but pays one network
+									fire and one receive callback for every call.
+								</p>
+							</article>
+							<article>
+								<strong>VNetDirect</strong>
+								<p>
+									<code>VNet.direct(...)</code> keeps the frame queue by default,
+									but skips VNet-side prediction, middleware, validation, policy,
+									transaction, and early queue work. It is the thinner VNet path
+									for packets that do not need those features.
+								</p>
+							</article>
+						</div>
+						<p>
+							Immediate is about timing, not throughput. Use it for parries,
+							purchases, trade confirms, reward claims, and small request-like
+							actions where the packet should leave right away. Avoid it for
+							movement, aim, entity snapshots, and other state that fires every
+							frame.
+						</p>
+						<p>
+							Direct is for packets where you intentionally want less VNet-side
+							work. It still batches same-frame traffic unless you pass
+							<code>{ immediate = true }</code>. If the packet needs validation,
+							policy checks, idempotency, or prediction hooks, use normal VNet or
+							<code>VNet.instant(...)</code> instead.
+						</p>
+						<p>
+							The timing table measures what the benchmark can see from public
+							APIs. <code>Client encode</code> is send/enqueue plus public flush
+							work. <code>Decode/callback</code> is the sampled server receive
+							callback path. VNet stats counters are kept off during this frame
+							benchmark so the CPU row does not charge VNet for counters that the
+							other tools do not run.
+						</p>
+						<p>
+							Memory uses <code>gcinfo()</code> heap deltas, so read it as GC
+							pressure instead of a perfect allocation profile. Negative values
+							can happen when the collector runs during the test.
+						</p>
+					</div>
+
+					<div class="benchmark-legend" aria-label="Benchmark tool colors">
+						<span class="tool-vnet"><i></i>VNet</span>
+						<span class="tool-vnet-immediate"><i></i>VNetImmediate</span>
+						<span class="tool-vnet-direct"><i></i>VNetDirect</span>
+						<span class="tool-blink"><i></i>Blink</span>
+						<span class="tool-bytenet"><i></i>ByteNet</span>
+					</div>
+
+					<h3 class="docs-subtitle">FPS</h3>
+
+					<div class="benchmark-table-wrap">
+						<table class="benchmark-table wide">
+							<thead>
+								<tr>
+									<th>Scenario</th>
+									<th>Tool</th>
+									<th>Median</th>
+									<th>Best</th>
+									<th>P80</th>
+									<th>P90</th>
+									<th>P95</th>
+									<th>P99</th>
+									<th>Loss</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr>
+									<td>Booleans</td>
+									<td>VNet</td>
+									<td>249.66</td>
+									<td>1606.53</td>
+									<td>200.12</td>
+									<td>199.04</td>
+									<td>167.72</td>
+									<td>165.45</td>
+									<td>0%</td>
+								</tr>
+								<tr>
+									<td>Booleans</td>
+									<td>VNetImmediate</td>
+									<td>200.55</td>
+									<td>691.95</td>
+									<td>125.15</td>
+									<td>110.17</td>
+									<td>90.99</td>
+									<td>71.67</td>
+									<td>0%</td>
+								</tr>
+								<tr>
+									<td>Booleans</td>
+									<td>VNetDirect</td>
+									<td>249.56</td>
+									<td>1001.52</td>
+									<td>200.22</td>
+									<td>199.30</td>
+									<td>198.54</td>
+									<td>166.04</td>
+									<td>0%</td>
+								</tr>
+								<tr>
+									<td>Booleans</td>
+									<td>Blink</td>
+									<td>249.58</td>
+									<td>503.89</td>
+									<td>200.13</td>
+									<td>199.31</td>
+									<td>198.24</td>
+									<td>166.06</td>
+									<td>0%</td>
+								</tr>
+								<tr>
+									<td>Booleans</td>
+									<td>ByteNet</td>
+									<td>249.76</td>
+									<td>503.79</td>
+									<td>200.18</td>
+									<td>199.43</td>
+									<td>198.34</td>
+									<td>166.20</td>
+									<td>0%</td>
+								</tr>
+								<tr>
+									<td>Entities</td>
+									<td>VNet</td>
+									<td>249.83</td>
+									<td>637.41</td>
+									<td>200.26</td>
+									<td>199.23</td>
+									<td>198.65</td>
+									<td>166.02</td>
+									<td>0%</td>
+								</tr>
+								<tr>
+									<td>Entities</td>
+									<td>VNetImmediate</td>
+									<td>166.76</td>
+									<td>503.92</td>
+									<td>141.78</td>
+									<td>124.53</td>
+									<td>110.85</td>
+									<td>76.97</td>
+									<td>0%</td>
+								</tr>
+								<tr>
+									<td>Entities</td>
+									<td>VNetDirect</td>
+									<td>249.54</td>
+									<td>997.37</td>
+									<td>200.08</td>
+									<td>199.22</td>
+									<td>183.28</td>
+									<td>166.09</td>
+									<td>0%</td>
+								</tr>
+								<tr>
+									<td>Entities</td>
+									<td>Blink</td>
+									<td>249.64</td>
+									<td>1000.08</td>
+									<td>200.01</td>
+									<td>198.94</td>
+									<td>167.54</td>
+									<td>165.42</td>
+									<td>0%</td>
+								</tr>
+								<tr>
+									<td>Entities</td>
+									<td>ByteNet</td>
+									<td>249.58</td>
+									<td>1005.15</td>
+									<td>199.88</td>
+									<td>198.75</td>
+									<td>167.30</td>
+									<td>165.57</td>
+									<td>0%</td>
+								</tr>
+								<tr>
+									<td>QuantizedEntities</td>
+									<td>VNet</td>
+									<td>249.61</td>
+									<td>1005.40</td>
+									<td>200.15</td>
+									<td>199.10</td>
+									<td>172.85</td>
+									<td>165.16</td>
+									<td>0%</td>
+								</tr>
+								<tr>
+									<td>QuantizedEntities</td>
+									<td>VNetImmediate</td>
+									<td>165.51</td>
+									<td>499.77</td>
+									<td>125.14</td>
+									<td>111.34</td>
+									<td>104.26</td>
+									<td>90.71</td>
+									<td>0%</td>
+								</tr>
+								<tr>
+									<td>QuantizedEntities</td>
+									<td>VNetDirect</td>
+									<td>249.80</td>
+									<td>1002.61</td>
+									<td>200.24</td>
+									<td>199.38</td>
+									<td>191.85</td>
+									<td>166.03</td>
+									<td>0%</td>
+								</tr>
+								<tr>
+									<td>QuantizedEntities</td>
+									<td>Blink</td>
+									<td>249.62</td>
+									<td>1003.53</td>
+									<td>200.06</td>
+									<td>199.15</td>
+									<td>184.40</td>
+									<td>165.85</td>
+									<td>0%</td>
+								</tr>
+								<tr>
+									<td>QuantizedEntities</td>
+									<td>ByteNet</td>
+									<td>249.67</td>
+									<td>1008.35</td>
+									<td>200.04</td>
+									<td>199.08</td>
+									<td>172.66</td>
+									<td>165.83</td>
+									<td>0%</td>
+								</tr>
+							
+							
+							</tbody>
+						</table>
+					</div>
+
+					<h3 class="docs-subtitle">Bytes</h3>
+					<p>
+						ByteNet rows use the values printed by the benchmark runner:
+						<code>1/31/31</code>. <code>VNetImmediate</code> uses the same VNet
+						body sizes with a 2-byte direct packet id header. <code>VNetDirect</code>
+						keeps the packed group header by default because it still flushes once
+						per frame. Byte totals come from fixed body sizes plus the visible
+						header model; they do not include hidden Roblox RemoteEvent overhead.
+					</p>
+
+					<div class="benchmark-table-wrap">
+						<table class="benchmark-table">
+							<thead>
+								<tr>
+									<th>Scenario</th>
+									<th>Tool</th>
+									<th>Messages</th>
+									<th>Bytes/msg</th>
+									<th>Bytes sent</th>
+									<th>Estimated Kbps</th>
+									<th>Loss</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr>
+									<td>Booleans</td>
+									<td>VNet</td>
+									<td>2,370,000</td>
+									<td>1.01</td>
+									<td>2.28 MiB</td>
+									<td>1908.49</td>
+									<td>0%</td>
+								</tr>
+								<tr>
+									<td>Booleans</td>
+									<td>VNetImmediate</td>
+									<td>1,777,000</td>
+									<td>3.00</td>
+									<td>5.08 MiB</td>
+									<td>4263.65</td>
+									<td>0%</td>
+								</tr>
+								<tr>
+									<td>Booleans</td>
+									<td>VNetDirect</td>
+									<td>2,402,000</td>
+									<td>1.01</td>
+									<td>2.31 MiB</td>
+									<td>1934.46</td>
+									<td>0%</td>
+								</tr>
+								<tr>
+									<td>Booleans</td>
+									<td>Blink</td>
+									<td>2,401,000</td>
+									<td>2.00</td>
+									<td>4.58 MiB</td>
+									<td>3840.67</td>
+									<td>0%</td>
+								</tr>
+								<tr>
+									<td>Booleans</td>
+									<td>ByteNet</td>
+									<td>2,401,000</td>
+									<td>1.00</td>
+									<td>2.29 MiB</td>
+									<td>1920.55</td>
+									<td>0%</td>
+								</tr>
+								<tr>
+									<td>Entities</td>
+									<td>VNet</td>
+									<td>2,402,000</td>
+									<td>31.01</td>
+									<td>71.03 MiB</td>
+									<td>59561.69</td>
+									<td>0%</td>
+								</tr>
+								<tr>
+									<td>Entities</td>
+									<td>VNetImmediate</td>
+									<td>1,615,000</td>
+									<td>33.00</td>
+									<td>50.83 MiB</td>
+									<td>42621.48</td>
+									<td>0%</td>
+								</tr>
+								<tr>
+									<td>Entities</td>
+									<td>VNetDirect</td>
+									<td>2,402,000</td>
+									<td>31.01</td>
+									<td>71.03 MiB</td>
+									<td>59565.84</td>
+									<td>0%</td>
+								</tr>
+								<tr>
+									<td>Entities</td>
+									<td>Blink</td>
+									<td>2,391,000</td>
+									<td>32.00</td>
+									<td>72.97 MiB</td>
+									<td>61182.79</td>
+									<td>0%</td>
+								</tr>
+								<tr>
+									<td>Entities</td>
+									<td>ByteNet</td>
+									<td>2,398,000</td>
+									<td>31.00</td>
+									<td>70.89 MiB</td>
+									<td>59450.39</td>
+									<td>0%</td>
+								</tr>
+								<tr>
+									<td>QuantizedEntities</td>
+									<td>VNet</td>
+									<td>2,388,000</td>
+									<td>19.01</td>
+									<td>43.29 MiB</td>
+									<td>36302.40</td>
+									<td>0%</td>
+								</tr>
+								<tr>
+									<td>QuantizedEntities</td>
+									<td>VNetImmediate</td>
+									<td>1,490,000</td>
+									<td>21.00</td>
+									<td>29.84 MiB</td>
+									<td>25023.08</td>
+									<td>0%</td>
+								</tr>
+								<tr>
+									<td>QuantizedEntities</td>
+									<td>VNetDirect</td>
+									<td>2,401,000</td>
+									<td>19.01</td>
+									<td>43.52 MiB</td>
+									<td>36508.38</td>
+									<td>0%</td>
+								</tr>
+								<tr>
+									<td>QuantizedEntities</td>
+									<td>Blink</td>
+									<td>2,400,000</td>
+									<td>32.00</td>
+									<td>73.24 MiB</td>
+									<td>61428.79</td>
+									<td>0%</td>
+								</tr>
+								<tr>
+									<td>QuantizedEntities</td>
+									<td>ByteNet</td>
+									<td>2,402,000</td>
+									<td>31.00</td>
+									<td>71.01 MiB</td>
+									<td>59553.33</td>
+									<td>0%</td>
+								</tr>
+							
+							
+							</tbody>
+						</table>
+					</div>
+
+					<h3 class="docs-subtitle">Timing</h3>
+
+					<div class="benchmark-table-wrap">
+						<table class="benchmark-table wide">
+							<thead>
+								<tr>
+									<th>Scenario</th>
+									<th>Tool</th>
+									<th>Client encode us/msg</th>
+									<th>Server receive ms/frame</th>
+									<th>Max receive ms/frame</th>
+									<th>Decode/callback us/msg</th>
+									<th>Server callbacks</th>
+									<th>Callback ms total</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr>
+									<td>Booleans</td>
+									<td>VNet</td>
+									<td>0.17</td>
+									<td>0.00</td>
+									<td>0.18</td>
+									<td>0.00</td>
+									<td>2,370</td>
+									<td>1.43</td>
+								</tr>
+								<tr>
+									<td>Booleans</td>
+									<td>VNetImmediate</td>
+									<td>2.02</td>
+									<td>0.12</td>
+									<td>2.21</td>
+									<td>0.12</td>
+									<td>1,777,000</td>
+									<td>215.96</td>
+								</tr>
+								<tr>
+									<td>Booleans</td>
+									<td>VNetDirect</td>
+									<td>0.13</td>
+									<td>0.00</td>
+									<td>0.17</td>
+									<td>0.00</td>
+									<td>2,402</td>
+									<td>1.22</td>
+								</tr>
+								<tr>
+									<td>Booleans</td>
+									<td>Blink</td>
+									<td>0.08</td>
+									<td>0.11</td>
+									<td>2.82</td>
+									<td>0.11</td>
+									<td>2,401,000</td>
+									<td>260.01</td>
+								</tr>
+								<tr>
+									<td>Booleans</td>
+									<td>ByteNet</td>
+									<td>0.21</td>
+									<td>0.12</td>
+									<td>1.11</td>
+									<td>0.12</td>
+									<td>2,401,000</td>
+									<td>280.32</td>
+								</tr>
+								<tr>
+									<td>Entities</td>
+									<td>VNet</td>
+									<td>0.50</td>
+									<td>0.00</td>
+									<td>0.10</td>
+									<td>0.00</td>
+									<td>2,402</td>
+									<td>0.84</td>
+								</tr>
+								<tr>
+									<td>Entities</td>
+									<td>VNetImmediate</td>
+									<td>2.38</td>
+									<td>0.12</td>
+									<td>0.65</td>
+									<td>0.12</td>
+									<td>1,615,000</td>
+									<td>190.22</td>
+								</tr>
+								<tr>
+									<td>Entities</td>
+									<td>VNetDirect</td>
+									<td>0.51</td>
+									<td>0.00</td>
+									<td>0.17</td>
+									<td>0.00</td>
+									<td>2,402</td>
+									<td>1.20</td>
+								</tr>
+								<tr>
+									<td>Entities</td>
+									<td>Blink</td>
+									<td>0.12</td>
+									<td>0.11</td>
+									<td>0.65</td>
+									<td>0.11</td>
+									<td>2,391,000</td>
+									<td>262.68</td>
+								</tr>
+								<tr>
+									<td>Entities</td>
+									<td>ByteNet</td>
+									<td>0.61</td>
+									<td>0.13</td>
+									<td>2.01</td>
+									<td>0.13</td>
+									<td>2,398,000</td>
+									<td>304.17</td>
+								</tr>
+								<tr>
+									<td>QuantizedEntities</td>
+									<td>VNet</td>
+									<td>0.62</td>
+									<td>0.00</td>
+									<td>0.19</td>
+									<td>0.00</td>
+									<td>2,388</td>
+									<td>1.13</td>
+								</tr>
+								<tr>
+									<td>QuantizedEntities</td>
+									<td>VNetImmediate</td>
+									<td>2.53</td>
+									<td>0.12</td>
+									<td>1.75</td>
+									<td>0.12</td>
+									<td>1,490,000</td>
+									<td>180.72</td>
+								</tr>
+								<tr>
+									<td>QuantizedEntities</td>
+									<td>VNetDirect</td>
+									<td>0.58</td>
+									<td>0.00</td>
+									<td>0.14</td>
+									<td>0.00</td>
+									<td>2,401</td>
+									<td>1.43</td>
+								</tr>
+								<tr>
+									<td>QuantizedEntities</td>
+									<td>Blink</td>
+									<td>0.12</td>
+									<td>0.11</td>
+									<td>5.31</td>
+									<td>0.11</td>
+									<td>2,400,000</td>
+									<td>260.36</td>
+								</tr>
+								<tr>
+									<td>QuantizedEntities</td>
+									<td>ByteNet</td>
+									<td>0.60</td>
+									<td>0.12</td>
+									<td>1.25</td>
+									<td>0.12</td>
+									<td>2,402,000</td>
+									<td>292.33</td>
+								</tr>
+							
+							
+							</tbody>
+						</table>
+					</div>
+
+					<h3 class="docs-subtitle">Memory</h3>
+
+					<div class="benchmark-table-wrap">
+						<table class="benchmark-table">
+							<thead>
+								<tr>
+									<th>Scenario</th>
+									<th>Tool</th>
+									<th>Client heap KiB</th>
+									<th>Server heap KiB</th>
+									<th>Client KiB/M msg</th>
+									<th>Server KiB/M msg</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr>
+									<td>Booleans</td>
+									<td>VNet</td>
+									<td>415.00</td>
+									<td>195.00</td>
+									<td>175.11</td>
+									<td>82.28</td>
+								</tr>
+								<tr>
+									<td>Booleans</td>
+									<td>VNetImmediate</td>
+									<td>1301.00</td>
+									<td>859.00</td>
+									<td>732.13</td>
+									<td>483.40</td>
+								</tr>
+								<tr>
+									<td>Booleans</td>
+									<td>VNetDirect</td>
+									<td>-137.00</td>
+									<td>290.00</td>
+									<td>-57.04</td>
+									<td>120.73</td>
+								</tr>
+								<tr>
+									<td>Booleans</td>
+									<td>Blink</td>
+									<td>1040.00</td>
+									<td>1306.00</td>
+									<td>433.15</td>
+									<td>543.94</td>
+								</tr>
+								<tr>
+									<td>Booleans</td>
+									<td>ByteNet</td>
+									<td>508.00</td>
+									<td>-1272.00</td>
+									<td>211.58</td>
+									<td>-529.78</td>
+								</tr>
+								<tr>
+									<td>Entities</td>
+									<td>VNet</td>
+									<td>319.00</td>
+									<td>1.00</td>
+									<td>132.81</td>
+									<td>0.42</td>
+								</tr>
+								<tr>
+									<td>Entities</td>
+									<td>VNetImmediate</td>
+									<td>250.00</td>
+									<td>351.00</td>
+									<td>154.80</td>
+									<td>217.34</td>
+								</tr>
+								<tr>
+									<td>Entities</td>
+									<td>VNetDirect</td>
+									<td>654.00</td>
+									<td>-138.00</td>
+									<td>272.27</td>
+									<td>-57.45</td>
+								</tr>
+								<tr>
+									<td>Entities</td>
+									<td>Blink</td>
+									<td>456.00</td>
+									<td>1075.00</td>
+									<td>190.72</td>
+									<td>449.60</td>
+								</tr>
+								<tr>
+									<td>Entities</td>
+									<td>ByteNet</td>
+									<td>-673.00</td>
+									<td>373.00</td>
+									<td>-280.65</td>
+									<td>155.55</td>
+								</tr>
+								<tr>
+									<td>QuantizedEntities</td>
+									<td>VNet</td>
+									<td>-21.00</td>
+									<td>282.00</td>
+									<td>-8.79</td>
+									<td>118.09</td>
+								</tr>
+								<tr>
+									<td>QuantizedEntities</td>
+									<td>VNetImmediate</td>
+									<td>207.00</td>
+									<td>330.00</td>
+									<td>138.93</td>
+									<td>221.48</td>
+								</tr>
+								<tr>
+									<td>QuantizedEntities</td>
+									<td>VNetDirect</td>
+									<td>232.00</td>
+									<td>172.00</td>
+									<td>96.63</td>
+									<td>71.64</td>
+								</tr>
+								<tr>
+									<td>QuantizedEntities</td>
+									<td>Blink</td>
+									<td>1077.00</td>
+									<td>17.00</td>
+									<td>448.75</td>
+									<td>7.08</td>
+								</tr>
+								<tr>
+									<td>QuantizedEntities</td>
+									<td>ByteNet</td>
+									<td>-367.00</td>
+									<td>966.00</td>
+									<td>-152.79</td>
+									<td>402.16</td>
+								</tr>
+							
+							
+							</tbody>
+						</table>
+					</div>
+
+					<h3 class="docs-subtitle">Receive shape</h3>
+					<p>
+						This table is about the public callback shape, not a claim that one
+						library never groups anything internally. VNet exposes grouped
+						callbacks, so the benchmark can see many payloads in one callback.
+						Blink and ByteNet report these receives one message at a time through
+						the public API used here.
+					</p>
+
+					<div class="benchmark-table-wrap">
+						<table class="benchmark-table wide">
+							<thead>
+								<tr>
+									<th>Scenario</th>
+									<th>Tool</th>
+									<th>Callbacks</th>
+									<th>Avg payloads/callback</th>
+									<th>Min</th>
+									<th>Max</th>
+									<th>Size 1</th>
+									<th>512+</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr>
+									<td>Booleans</td>
+									<td>VNet</td>
+									<td>2,370</td>
+									<td>1000.00</td>
+									<td>1,000</td>
+									<td>1,000</td>
+									<td>0</td>
+									<td>2,370</td>
+								</tr>
+								<tr>
+									<td>Booleans</td>
+									<td>VNetImmediate</td>
+									<td>1,777,000</td>
+									<td>1.00</td>
+									<td>1</td>
+									<td>1</td>
+									<td>1,777,000</td>
+									<td>0</td>
+								</tr>
+								<tr>
+									<td>Booleans</td>
+									<td>VNetDirect</td>
+									<td>2,402</td>
+									<td>1000.00</td>
+									<td>1,000</td>
+									<td>1,000</td>
+									<td>0</td>
+									<td>2,402</td>
+								</tr>
+								<tr>
+									<td>Booleans</td>
+									<td>Blink</td>
+									<td>2,401,000</td>
+									<td>1.00</td>
+									<td>1</td>
+									<td>1</td>
+									<td>2,401,000</td>
+									<td>0</td>
+								</tr>
+								<tr>
+									<td>Booleans</td>
+									<td>ByteNet</td>
+									<td>2,401,000</td>
+									<td>1.00</td>
+									<td>1</td>
+									<td>1</td>
+									<td>2,401,000</td>
+									<td>0</td>
+								</tr>
+								<tr>
+									<td>Entities</td>
+									<td>VNet</td>
+									<td>2,402</td>
+									<td>1000.00</td>
+									<td>1,000</td>
+									<td>1,000</td>
+									<td>0</td>
+									<td>2,402</td>
+								</tr>
+								<tr>
+									<td>Entities</td>
+									<td>VNetImmediate</td>
+									<td>1,615,000</td>
+									<td>1.00</td>
+									<td>1</td>
+									<td>1</td>
+									<td>1,615,000</td>
+									<td>0</td>
+								</tr>
+								<tr>
+									<td>Entities</td>
+									<td>VNetDirect</td>
+									<td>2,402</td>
+									<td>1000.00</td>
+									<td>1,000</td>
+									<td>1,000</td>
+									<td>0</td>
+									<td>2,402</td>
+								</tr>
+								<tr>
+									<td>Entities</td>
+									<td>Blink</td>
+									<td>2,391,000</td>
+									<td>1.00</td>
+									<td>1</td>
+									<td>1</td>
+									<td>2,391,000</td>
+									<td>0</td>
+								</tr>
+								<tr>
+									<td>Entities</td>
+									<td>ByteNet</td>
+									<td>2,398,000</td>
+									<td>1.00</td>
+									<td>1</td>
+									<td>1</td>
+									<td>2,398,000</td>
+									<td>0</td>
+								</tr>
+								<tr>
+									<td>QuantizedEntities</td>
+									<td>VNet</td>
+									<td>2,388</td>
+									<td>1000.00</td>
+									<td>1,000</td>
+									<td>1,000</td>
+									<td>0</td>
+									<td>2,388</td>
+								</tr>
+								<tr>
+									<td>QuantizedEntities</td>
+									<td>VNetImmediate</td>
+									<td>1,490,000</td>
+									<td>1.00</td>
+									<td>1</td>
+									<td>1</td>
+									<td>1,490,000</td>
+									<td>0</td>
+								</tr>
+								<tr>
+									<td>QuantizedEntities</td>
+									<td>VNetDirect</td>
+									<td>2,401</td>
+									<td>1000.00</td>
+									<td>1,000</td>
+									<td>1,000</td>
+									<td>0</td>
+									<td>2,401</td>
+								</tr>
+								<tr>
+									<td>QuantizedEntities</td>
+									<td>Blink</td>
+									<td>2,400,000</td>
+									<td>1.00</td>
+									<td>1</td>
+									<td>1</td>
+									<td>2,400,000</td>
+									<td>0</td>
+								</tr>
+								<tr>
+									<td>QuantizedEntities</td>
+									<td>ByteNet</td>
+									<td>2,402,000</td>
+									<td>1.00</td>
+									<td>1</td>
+									<td>1</td>
+									<td>2,402,000</td>
+									<td>0</td>
+								</tr>
+							
+							
+							</tbody>
+						</table>
+					</div>
+				</section>
+
+				<section id="runtime" class="docs-section">
+					<p class="section-label">Runtime Shape</p>
+					<h2>VNet creates a small remote folder.</h2>
+					<p>
+						In a running place, VNet keeps the network surface small: one folder
+						and two remotes, one reliable and one fast. Your packet names and ids
+						live in the schema, not as a pile of generated RemoteEvents.
+					</p>
+
+					<pre><code>ReplicatedStorage
+  _VNet
+    Reliable
+    Fast</code></pre>
+				</section>
+
+				<section id="api" class="docs-section">
+					<p class="section-label">Full API</p>
+					<h2>The public API by job.</h2>
+					<p>
+						Use this as a map when you forget a helper name. Most gameplay code
+						lives in the first two groups: build a network, describe a packet,
+						then use the packet methods shown earlier.
+					</p>
+
+					<div class="api-reference">
+						<article>
+							<h3>Build networks</h3>
+							<div class="api-grid">
+								<code>VNet(schema, options)</code>
+								<code>VNet.client(schema, options)</code>
+								<code>VNet.server(schema, options)</code>
+								<code>VNet.shared(schema, options)</code>
+								<code>VNet.bindable(schema, options)</code>
+							</div>
+						</article>
+
+						<article>
+							<h3>Describe packets</h3>
+							<div class="api-grid">
+								<code>VNet.group(schema)</code>
+								<code>VNet.with(payload, options)</code>
+								<code>VNet.packet(name, payload, options)</code>
+								<code>VNet.reliable(payload, options)</code>
+								<code>VNet.unreliable(payload, options)</code>
+								<code>VNet.instant(payload, options)</code>
+								<code>VNet.direct(payload, options)</code>
+							</div>
+						</article>
+
+						<article>
+							<h3>Requests and state</h3>
+							<div class="api-grid">
+								<code>VNet.request(config)</code>
+								<code>VNet.request(input, output, options)</code>
+								<code>VNet.delta(shape, options)</code>
+								<code>VNet.transaction(name, payload, options)</code>
+								<code>VNet.replicator(config, options)</code>
+								<code>VNet.shard(name, schema, options)</code>
+							</div>
+						</article>
+
+						<article>
+							<h3>Runtime tools</h3>
+							<div class="api-grid">
+								<code>VNet.audit(schema, options)</code>
+								<code>VNet.configure(options)</code>
+								<code>VNet.ready</code>
+								<code>VNet.isReady()</code>
+								<code>VNet.flush()</code>
+								<code>VNet.stats()</code>
+								<code>VNet.resetStats()</code>
+								<code>VNet.use(middleware)</code>
+							</div>
+						</article>
+
+						<article>
+							<h3>Helpers</h3>
+							<div class="api-grid">
+								<code>VNet.t</code>
+								<code>VNet.t.ref(kind)</code>
+								<code>VNet.t.flags(names)</code>
+								<code>VNet.t.instance(className)</code>
+								<code>VNet.t.player()</code>
+								<code>VNet.t.character()</code>
+								<code>VNet.variant(kind, payload)</code>
+							</div>
+						</article>
+
+						<article>
+							<h3>Subsystems</h3>
+							<div class="api-grid">
+								<code>VNet.Registry</code>
+								<code>VNet.JoinSync</code>
+								<code>VNet.Layer</code>
+								<code>VNet.Relevance</code>
+								<code>VNet.Tags</code>
+								<code>VNet.Attributes</code>
+								<code>VNet.Shard</code>
+								<code>VNet.version</code>
+							</div>
+						</article>
+					</div>
+				</section>
+			</div>
+		</div>
+	</main>
+
+	<script>
+		const benchmarkToolClasses = {
+			VNet: "tool-vnet",
+			VNetImmediate: "tool-vnet-immediate",
+			VNetDirect: "tool-vnet-direct",
+			Blink: "tool-blink",
+			ByteNet: "tool-bytenet",
+		};
+
+		for (const row of document.querySelectorAll(".benchmark-table tbody tr")) {
+			const tool = row.children[1]?.textContent?.trim();
+			const className = benchmarkToolClasses[tool];
+
+			if (className) {
+				row.classList.add(className);
+			}
+		}
+
+		const links = Array.from(document.querySelectorAll(".sidebar a"));
+		const sections = links
+			.map((link) => {
+				const id = link.getAttribute("href");
+				const section = id ? document.querySelector(id) : null;
+
+				return section ? { link, section } : null;
+			})
+			.filter(Boolean);
+
+		function setActiveLink() {
+			let current = sections[0];
+
+			for (const item of sections) {
+				if (item.section.getBoundingClientRect().top <= 140) {
+					current = item;
+				}
+			}
+
+			for (const item of sections) {
+				item.link.classList.toggle("active", item === current);
+			}
+		}
+
+		window.addEventListener("scroll", setActiveLink, { passive: true });
+		window.addEventListener("resize", setActiveLink);
+		setActiveLink();
+	</script>
+</body>
+</html>
