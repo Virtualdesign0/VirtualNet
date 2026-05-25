@@ -1,0 +1,28 @@
+{
+  "name": "VirtualNet",
+  "tree": {
+    "$className": "DataModel",
+    "ReplicatedStorage": {
+      "$className": "ReplicatedStorage",
+      "VNet": {
+        "$className": "ModuleScript",
+        "$path": "src/VNet/init.luau",
+        "Diagnostics": {
+          "$path": "src/VNet/Diagnostics"
+        },
+        "Runtime": {
+          "$path": "src/VNet/Runtime"
+        },
+        "Schema": {
+          "$path": "src/VNet/Schema"
+        },
+        "Signals": {
+          "$path": "src/VNet/Signals"
+        },
+        "Wire": {
+          "$path": "src/VNet/Wire"
+        }
+      }
+    }
+  }
+}
