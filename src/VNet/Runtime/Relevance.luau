@@ -6,8 +6,8 @@ export type Rule = (Player, any, any?) -> boolean
 
 local Relevance = {}
 
-local rules: {[string]: Rule} = {}
-local order: {string} = {}
+local rules: { [string]: Rule } = {}
+local order: { string } = {}
 
 local function assertName(name: any): string
 	if typeof(name) ~= "string" or name == "" then
@@ -79,9 +79,9 @@ function Relevance.check(player: Player, entity: any, context: any?): boolean
 	return false
 end
 
-function Relevance.playersFor(entity: any, context: any?, candidates: {Player}?): {Player}
+function Relevance.playersFor(entity: any, context: any?, candidates: { Player }?): { Player }
 	local source = candidates or Players:GetPlayers()
-	local result: {Player} = {}
+	local result: { Player } = {}
 	local count = 0
 
 	for _, player in ipairs(source) do
