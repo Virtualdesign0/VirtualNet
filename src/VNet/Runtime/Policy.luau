@@ -12,11 +12,11 @@ export type PacketPolicy = {
 	burst: number?,
 	validate: ((Player?, any) -> boolean)?,
 	onViolation: string,
-	buckets: {[Player]: Bucket},
+	buckets: { [Player]: Bucket },
 }
 
 local Policy = {}
-local RATE_ERROR = "[VNet]: packet policy rate must be a positive number or \"10/s\"."
+local RATE_ERROR = '[VNet]: packet policy rate must be a positive number or "10/s".'
 
 local function parseRate(value: any): number?
 	if value == nil then
@@ -59,7 +59,7 @@ local function parseRate(value: any): number?
 	error("[VNet]: packet policy rate unit must be s, m, or h.", 4)
 end
 
-local function policyConfig(config: {[any]: any}): {[any]: any}?
+local function policyConfig(config: { [any]: any }): { [any]: any }?
 	local policy = config.policy
 
 	if policy ~= nil then
@@ -70,14 +70,19 @@ local function policyConfig(config: {[any]: any}): {[any]: any}?
 		return policy
 	end
 
-	if config.rate ~= nil or config.burst ~= nil or config.onViolation ~= nil or typeof(config.validate) == "function" then
+	if
+		config.rate ~= nil
+		or config.burst ~= nil
+		or config.onViolation ~= nil
+		or typeof(config.validate) == "function"
+	then
 		return config
 	end
 
 	return nil
 end
 
-function Policy.fromConfig(config: {[any]: any}): PacketPolicy?
+function Policy.fromConfig(config: { [any]: any }): PacketPolicy?
 	local policy = policyConfig(config)
 
 	if not policy then
@@ -122,7 +127,12 @@ function Policy.fromConfig(config: {[any]: any}): PacketPolicy?
 	}
 end
 
-local function drop(policy: PacketPolicy, packetName: string, sender: Player?, reason: string): boolean
+local function drop(
+	policy: PacketPolicy,
+	packetName: string,
+	sender: Player?,
+	reason: string
+): boolean
 	Stats.bump("droppedPackets")
 
 	if policy.onViolation == "warn" then
@@ -167,7 +177,12 @@ local function consumeRate(policy: PacketPolicy, packetName: string, sender: Pla
 	return true
 end
 
-function Policy.accept(policy: PacketPolicy?, packetName: string, sender: Player?, payload: any): boolean
+function Policy.accept(
+	policy: PacketPolicy?,
+	packetName: string,
+	sender: Player?,
+	payload: any
+): boolean
 	if not policy then
 		return true
 	end
