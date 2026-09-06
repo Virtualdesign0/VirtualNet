@@ -1,13 +1,13 @@
 --!strict
 
 type KindStore = {
-	byId: {[number]: Instance},
-	byInstance: {[Instance]: number},
+	byId: { [number]: Instance },
+	byInstance: { [Instance]: number },
 }
 
 local InstanceRegistry = {}
 
-local stores: {[string]: KindStore} = {}
+local stores: { [string]: KindStore } = {}
 
 local function assertKind(kind: any): string
 	if typeof(kind) ~= "string" or kind == "" then
@@ -40,15 +40,19 @@ local function storeFor(kind: string): KindStore
 		return store
 	end
 
-	store = {
+	-- Built into its own local rather than assigned back over the nullable
+	-- lookup above: the analyser does not carry the narrowing onto a name it
+	-- has already seen as possibly nil.
+	local created: KindStore = {
 		byId = {},
 		byInstance = setmetatable({}, {
 			__mode = "k",
 		}) :: any,
 	}
-	stores[kind] = store
 
-	return store
+	stores[kind] = created
+
+	return created
 end
 
 function InstanceRegistry.register(kind: string, instance: Instance, id: number): () -> ()
@@ -66,7 +70,10 @@ function InstanceRegistry.register(kind: string, instance: Instance, id: number)
 	local existingId = store.byInstance[instance]
 
 	if existingId and existingId ~= id then
-		error(`[VNet]: Instance is already registered as reference id {existingId} for kind "{kind}".`, 2)
+		error(
+			`[VNet]: Instance is already registered as reference id {existingId} for kind "{kind}".`,
+			2
+		)
 	end
 
 	store.byId[id] = instance
