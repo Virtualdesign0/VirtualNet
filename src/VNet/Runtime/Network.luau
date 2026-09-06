@@ -41,8 +41,8 @@ local function join(prefix: string?, key: string): string
 	return key
 end
 
-local function sortedSchemaKeys(schema: {[any]: any}): {string}?
-	local keys: {string} = {}
+local function sortedSchemaKeys(schema: { [any]: any }): { string }?
+	local keys: { string } = {}
 
 	for key in schema do
 		if typeof(key) ~= "string" or key == "" then
@@ -56,7 +56,7 @@ local function sortedSchemaKeys(schema: {[any]: any}): {string}?
 	return keys
 end
 
-local function cloneConfig(config: {[any]: any}): {[any]: any}
+local function cloneConfig(config: { [any]: any }): { [any]: any }
 	local cloned = table.clone(config)
 	cloned[PACKET_KEY] = nil
 	cloned[REQUEST_KEY] = nil
@@ -90,7 +90,7 @@ local function isRequestObjectConfig(value: any): boolean
 		or getField(value, "timeout") ~= nil
 end
 
-local function packetLane(config: {[any]: any}): Lane
+local function packetLane(config: { [any]: any }): Lane
 	if config.fast == true or config.lane == "fast" or config.reliable == false then
 		return "fast"
 	end
@@ -98,16 +98,24 @@ local function packetLane(config: {[any]: any}): Lane
 	return "reliable"
 end
 
-local function pushError(report: {[string]: any}, message: string): ()
+local function pushError(report: { [string]: any }, message: string): ()
 	report.ok = false
 	table.insert((report :: any)["errors"], message)
 end
 
-local function pushWarning(report: {[string]: any}, message: string): ()
+local function pushWarning(report: { [string]: any }, message: string): ()
 	table.insert(report.warnings, message)
 end
 
-local function auditPacket(report: {[string]: any}, names: {[string]: boolean}, ids: {[number]: string}, name: string, config: {[any]: any}, requireExplicitIds: boolean, allowUnpacked: boolean): ()
+local function auditPacket(
+	report: { [string]: any },
+	names: { [string]: boolean },
+	ids: { [number]: string },
+	name: string,
+	config: { [any]: any },
+	requireExplicitIds: boolean,
+	allowUnpacked: boolean
+): ()
 	if typeof(name) ~= "string" or name == "" then
 		pushError(report, "[VNet]: Packet name must be a non-empty string.")
 		return
@@ -135,14 +143,28 @@ local function auditPacket(report: {[string]: any}, names: {[string]: boolean}, 
 
 	local collision = ids[id]
 	if collision then
-		pushError(report, '[VNet]: Packet id collision: "' .. collision .. '" and "' .. name .. '" both use ' .. tostring(id) .. ".")
+		pushError(
+			report,
+			'[VNet]: Packet id collision: "'
+				.. collision
+				.. '" and "'
+				.. name
+				.. '" both use '
+				.. tostring(id)
+				.. "."
+		)
 		return
 	end
 
 	ids[id] = name
 
 	if requireExplicitIds and not explicitId then
-		pushError(report, '[VNet]: Packet "' .. name .. '" uses a generated id. Public schemas must pin ids explicitly when requireExplicitIds = true.')
+		pushError(
+			report,
+			'[VNet]: Packet "'
+				.. name
+				.. '" uses a generated id. Public schemas must pin ids explicitly when requireExplicitIds = true.'
+		)
 		return
 	end
 
@@ -152,7 +174,13 @@ local function auditPacket(report: {[string]: any}, names: {[string]: boolean}, 
 	end)
 
 	if not resolvedOk then
-		pushError(report, '[VNet]: Packet "' .. name .. '" has an invalid payload schema: ' .. tostring(resolvedValue))
+		pushError(
+			report,
+			'[VNet]: Packet "'
+				.. name
+				.. '" has an invalid payload schema: '
+				.. tostring(resolvedValue)
+		)
 		return
 	end
 
@@ -167,12 +195,20 @@ local function auditPacket(report: {[string]: any}, names: {[string]: boolean}, 
 	end
 
 	if codec == nil and not allowUnpacked then
-		pushError(report, '[VNet]: Packet "' .. name .. '" payload is not supported by the packed codec. Use allowUnpacked = true to allow raw RemoteEvent fallback.')
+		pushError(
+			report,
+			'[VNet]: Packet "'
+				.. name
+				.. '" payload is not supported by the packed codec. Use allowUnpacked = true to allow raw RemoteEvent fallback.'
+		)
 		return
 	end
 
 	if codec == nil then
-		pushWarning(report, '[VNet]: Packet "' .. name .. '" uses raw RemoteEvent fallback instead of packed codec.')
+		pushWarning(
+			report,
+			'[VNet]: Packet "' .. name .. '" uses raw RemoteEvent fallback instead of packed codec.'
+		)
 	end
 
 	table.insert(report.packets, {
@@ -185,7 +221,15 @@ local function auditPacket(report: {[string]: any}, names: {[string]: boolean}, 
 	})
 end
 
-local function auditNode(report: {[string]: any}, names: {[string]: boolean}, ids: {[number]: string}, prefix: string?, schema: {[string]: any}, requireExplicitIds: boolean, allowUnpacked: boolean): ()
+local function auditNode(
+	report: { [string]: any },
+	names: { [string]: boolean },
+	ids: { [number]: string },
+	prefix: string?,
+	schema: { [string]: any },
+	requireExplicitIds: boolean,
+	allowUnpacked: boolean
+): ()
 	local keys = sortedSchemaKeys(schema)
 
 	if not keys then
@@ -217,10 +261,34 @@ local function auditNode(report: {[string]: any}, names: {[string]: boolean}, id
 					continue
 				end
 
-				auditPacket(report, names, ids, requestInfo.name, requestInfo.config, requireExplicitIds, allowUnpacked)
-				auditPacket(report, names, ids, responseInfo.name, responseInfo.config, requireExplicitIds, allowUnpacked)
+				auditPacket(
+					report,
+					names,
+					ids,
+					requestInfo.name,
+					requestInfo.config,
+					requireExplicitIds,
+					allowUnpacked
+				)
+				auditPacket(
+					report,
+					names,
+					ids,
+					responseInfo.name,
+					responseInfo.config,
+					requireExplicitIds,
+					allowUnpacked
+				)
 			else
-				auditPacket(report, names, ids, config.name or name, config, requireExplicitIds, allowUnpacked)
+				auditPacket(
+					report,
+					names,
+					ids,
+					config.name or name,
+					config,
+					requireExplicitIds,
+					allowUnpacked
+				)
 			end
 		else
 			auditPacket(report, names, ids, name, {
@@ -235,14 +303,18 @@ local function shouldAuditBuild(options: AuditOptions?): boolean
 		return false
 	end
 
-	if options.audit == true or options.requireExplicitIds == true or options.allowUnpacked ~= nil then
+	if
+		options.audit == true
+		or options.requireExplicitIds == true
+		or options.allowUnpacked ~= nil
+	then
 		return true
 	end
 
 	return false
 end
 
-local function defineNode(result: {[string]: any}, prefix: string?, schema: {[string]: any}): ()
+local function defineNode(result: { [string]: any }, prefix: string?, schema: { [string]: any }): ()
 	local keys = sortedSchemaKeys(schema)
 
 	if not keys then
@@ -273,7 +345,7 @@ local function defineNode(result: {[string]: any}, prefix: string?, schema: {[st
 	end
 end
 
-function Network.build(schema: {[string]: any}, options: AuditOptions?)
+function Network.build(schema: { [string]: any }, options: AuditOptions?)
 	if typeof(schema) ~= "table" then
 		error("[VNet]: VNet(...) expects a schema table.", 2)
 	end
@@ -291,7 +363,7 @@ function Network.build(schema: {[string]: any}, options: AuditOptions?)
 	return result
 end
 
-function Network.audit(schema: {[string]: any}, options: AuditOptions?)
+function Network.audit(schema: { [string]: any }, options: AuditOptions?)
 	if typeof(schema) ~= "table" then
 		error("[VNet]: audit expects a schema table.", 2)
 	end
@@ -304,15 +376,19 @@ function Network.audit(schema: {[string]: any}, options: AuditOptions?)
 		errors = {},
 	}
 
-	local requireExplicitIds = if options and options.requireExplicitIds ~= nil then options.requireExplicitIds == true else false
-	local allowUnpacked = if options and options.allowUnpacked ~= nil then options.allowUnpacked == true else false
+	local requireExplicitIds = if options and options.requireExplicitIds ~= nil
+		then options.requireExplicitIds == true
+		else false
+	local allowUnpacked = if options and options.allowUnpacked ~= nil
+		then options.allowUnpacked == true
+		else false
 
 	auditNode(report, {}, {}, nil, schema, requireExplicitIds, allowUnpacked)
 
 	return table.freeze(report)
 end
 
-function Network.group(schema: {[string]: any})
+function Network.group(schema: { [string]: any })
 	if typeof(schema) ~= "table" then
 		error("[VNet]: group expects a schema table.", 2)
 	end
@@ -323,8 +399,8 @@ function Network.group(schema: {[string]: any})
 	})
 end
 
-function Network.with(payloadSpec: any, options: {[string]: any}?)
-	local config: {[any]: any} = {
+function Network.with(payloadSpec: any, options: { [string]: any }?)
+	local config: { [any]: any } = {
 		[PACKET_KEY] = true,
 		payload = payloadSpec,
 	}
@@ -338,9 +414,9 @@ function Network.with(payloadSpec: any, options: {[string]: any}?)
 	return config
 end
 
-function Network.request(inputSpec: any?, outputSpec: any?, options: {[string]: any}?)
+function Network.request(inputSpec: any?, outputSpec: any?, options: { [string]: any }?)
 	if outputSpec == nil and options == nil and isRequestObjectConfig(inputSpec) then
-		local config = table.clone(inputSpec :: {[any]: any})
+		local config = table.clone(inputSpec :: { [any]: any })
 		config[PACKET_KEY] = true
 		config[REQUEST_KEY] = true
 		return config
@@ -358,39 +434,41 @@ function Network.request(inputSpec: any?, outputSpec: any?, options: {[string]: 
 	return config
 end
 
-function Network.reliable(payloadSpec: any, options: {[string]: any}?)
+function Network.reliable(payloadSpec: any, options: { [string]: any }?)
 	local config = Network.with(payloadSpec, options)
 	config.lane = "reliable"
 	config.reliable = true
 	return config
 end
 
-function Network.unreliable(payloadSpec: any, options: {[string]: any}?)
+function Network.unreliable(payloadSpec: any, options: { [string]: any }?)
 	local config = Network.with(payloadSpec, options)
 	config.lane = "fast"
 	config.reliable = false
 	return config
 end
 
-function Network.fast(payloadSpec: any, options: {[string]: any}?)
+function Network.fast(payloadSpec: any, options: { [string]: any }?)
 	return Network.unreliable(payloadSpec, options)
 end
 
-function Network.instant(payloadSpec: any, options: {[string]: any}?)
+function Network.instant(payloadSpec: any, options: { [string]: any }?)
 	local config = Network.with(payloadSpec, options)
 	config.immediate = true
 	return config
 end
 
-function Network.direct(payloadSpec: any, options: {[string]: any}?)
+function Network.direct(payloadSpec: any, options: { [string]: any }?)
 	local config = Network.with(payloadSpec, options)
 	config.direct = true
 	config.validate = false
 	return config
 end
 
-function Network.delta(shape: {[string]: any}, options: {[string]: any}?)
-	local entityIdSpec = if options then options.entityId or options.entityIdSpec or options.idSpec else nil
+function Network.delta(shape: { [string]: any }, options: { [string]: any }?)
+	local entityIdSpec = if options
+		then options.entityId or options.entityIdSpec or options.idSpec
+		else nil
 	local config = Network.with(Types.delta(shape, entityIdSpec), options)
 
 	config.delta = true
@@ -398,7 +476,7 @@ function Network.delta(shape: {[string]: any}, options: {[string]: any}?)
 	return config
 end
 
-function Network.transaction(first: any, second: any?, options: {[string]: any}?)
+function Network.transaction(first: any, second: any?, options: { [string]: any }?)
 	if typeof(first) == "string" then
 		local config = Network.with(if second == nil then "none" else second, options)
 
@@ -414,11 +492,11 @@ function Network.transaction(first: any, second: any?, options: {[string]: any}?
 	return config
 end
 
-function Network.replicator(config: {[string]: any}, options: {[string]: any}?)
+function Network.replicator(config: { [string]: any }, options: { [string]: any }?)
 	return Replicator.new(config, options)
 end
 
-function Network.shard(name: string, schema: {[string]: any}, options: {[string]: any}?)
+function Network.shard(name: string, schema: { [string]: any }, options: { [string]: any }?)
 	return Shard.bridge(name, schema, options)
 end
 
@@ -431,8 +509,8 @@ end
 
 Network.variant = Network.case
 
-function Network.packet(name: string, payloadSpec: any?, options: {[string]: any}?)
-	local config: {[string]: any} = if options then table.clone(options) else {}
+function Network.packet(name: string, payloadSpec: any?, options: { [string]: any }?)
+	local config: { [string]: any } = if options then table.clone(options) else {}
 	config.payload = if payloadSpec == nil then "none" else payloadSpec
 
 	if shouldAuditBuild(options :: any) then
@@ -455,7 +533,7 @@ function Network.use(middleware)
 	return Registry.use(middleware)
 end
 
-function Network.configure(options: {[string]: any}?): ()
+function Network.configure(options: { [string]: any }?): ()
 	Config.apply(options)
 end
 
