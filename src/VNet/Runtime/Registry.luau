@@ -40,20 +40,20 @@ type PacketState = {
 	transactionKey: string,
 	transactionTtl: number,
 	transactionMaxKeys: number,
-	transactionStores: {[string]: any},
-	queue: {{sender: Player?, payload: any, lane: Lane}},
+	transactionStores: { [string]: any },
+	queue: { { sender: Player?, payload: any, lane: Lane } },
 	api: any?,
 }
 
-type Middleware = (packetName: string, sender: Player?, payload: any) -> (boolean?)
+type Middleware = (packetName: string, sender: Player?, payload: any) -> boolean?
 
 local Registry = {}
 
 local CONTROL_REJECT_ID = 0
 local CONTROL_JOIN_SYNC_ID = -1
-local packetsByName: {[string]: PacketState} = {}
-local packetsById: {[number]: PacketState} = {}
-local middleware: {Middleware} = {}
+local packetsByName: { [string]: PacketState } = {}
+local packetsById: { [number]: PacketState } = {}
+local middleware: { Middleware } = {}
 local DEFAULT_TRANSACTION_KEY = "idempotencyKey"
 local DEFAULT_TRANSACTION_TTL = 120
 local DEFAULT_TRANSACTION_MAX_KEYS = 256
@@ -132,7 +132,12 @@ local function dispatch(state: PacketState, sender: Player?, payload: any): ()
 	end
 end
 
-local function dispatchBatch(state: PacketState, sender: Player?, payloads: {any}, count: number): ()
+local function dispatchBatch(
+	state: PacketState,
+	sender: Player?,
+	payloads: { any },
+	count: number
+): ()
 	if sender then
 		state.batchSignal:fire(sender, payloads, count)
 	else
@@ -178,7 +183,7 @@ local function firePrediction(state: PacketState, payload: any): ()
 	firePayloadSignal(state.predictionSignal, state.empty, payload)
 end
 
-local function firePredictions(state: PacketState, payloads: {any}): ()
+local function firePredictions(state: PacketState, payloads: { any }): ()
 	if not state.predictionSignal:hasListeners() then
 		return
 	end
@@ -196,7 +201,7 @@ local function firePredictions(state: PacketState, payloads: {any}): ()
 	end
 end
 
-local function connectPacketSignal(signal: any, listener: any, methodName: string): (() -> ())
+local function connectPacketSignal(signal: any, listener: any, methodName: string): () -> ()
 	if typeof(listener) ~= "function" then
 		error("[VNet]: packet." .. methodName .. " expects a callback.", 3)
 	end
@@ -208,7 +213,7 @@ local function connectPacketSignal(signal: any, listener: any, methodName: strin
 	end
 end
 
-local function deltaPayload(entityId: any, changes: any): {[string]: any}
+local function deltaPayload(entityId: any, changes: any): { [string]: any }
 	return {
 		id = entityId,
 		changes = changes,
@@ -254,8 +259,8 @@ local function acceptTransaction(state: PacketState, sender: Player?, payload: a
 	end
 
 	local now = os.clock()
-	local seen = store.seen :: {[any]: number}
-	local order = store.order :: {{key: any, seenAt: number}}
+	local seen = store.seen :: { [any]: number }
+	local order = store.order :: { { key: any, seenAt: number } }
 	local previous = seen[key]
 
 	if previous and now - previous <= state.transactionTtl then
@@ -305,7 +310,8 @@ local function flushEarlyQueue(state: PacketState): ()
 		for _, item in ipairs(queued) do
 			local payload = item.payload
 
-			if item.lane == state.lane
+			if
+				item.lane == state.lane
 				and (not state.validate or validate(state, payload, true))
 				and (state.direct or applyMiddleware(state, item.sender, payload))
 			then
@@ -323,7 +329,9 @@ local function flushEarlyQueue(state: PacketState): ()
 	end
 
 	for _, item in ipairs(queued) do
-		if item.lane == state.lane and (not state.validate or validate(state, item.payload, true)) then
+		if
+			item.lane == state.lane and (not state.validate or validate(state, item.payload, true))
+		then
 			dispatch(state, item.sender, item.payload)
 		end
 	end
@@ -336,7 +344,9 @@ local function queueEarly(state: PacketState, sender: Player?, payload: any, lan
 
 	if #state.queue >= MAX_EARLY_QUEUE then
 		table.remove(state.queue, 1)
-		Stats.warn(`[VNet]: Early queue for "{state.name}" exceeded {MAX_EARLY_QUEUE}; dropping oldest packet.`)
+		Stats.warn(
+			`[VNet]: Early queue for "{state.name}" exceeded {MAX_EARLY_QUEUE}; dropping oldest packet.`
+		)
 	end
 
 	table.insert(state.queue, {
@@ -346,7 +356,7 @@ local function queueEarly(state: PacketState, sender: Player?, payload: any, lan
 	})
 end
 
-local function validateMany(state: PacketState, payloads: {any}): ()
+local function validateMany(state: PacketState, payloads: { any }): ()
 	for _, payload in ipairs(payloads) do
 		validate(state, payload, false)
 	end
@@ -358,13 +368,21 @@ local function serverOnlyPacketMethod(methodName: string)
 	end
 end
 
-local function readPackedBatch(state: PacketState, sender: Player?, count: number, payloads: buffer): ({any}, number)
+local function readPackedBatch(
+	state: PacketState,
+	sender: Player?,
+	count: number,
+	payloads: buffer
+): ({ any }, number)
 	local packedReader = state.reader :: any
 	local values = createArray(count)
 	local accepted = 0
 	local cursor = 0
 
-	if state.direct or (#middleware == 0 and not state.validate and not state.transaction and not state.policy) then
+	if
+		state.direct
+		or (#middleware == 0 and not state.validate and not state.transaction and not state.policy)
+	then
 		if state.empty then
 			packedReader.finish(payloads, cursor)
 			return values, count
@@ -415,21 +433,32 @@ local function readPackedBatch(state: PacketState, sender: Player?, count: numbe
 	return values, accepted
 end
 
-local function readPackedBatchCount(state: PacketState, sender: Player?, count: number, payloads: buffer): number
+local function readPackedBatchCount(
+	state: PacketState,
+	sender: Player?,
+	count: number,
+	payloads: buffer
+): number
 	local packedReader = state.reader :: any
 	local accepted = 0
 	local cursor = 0
 
-	if state.direct or (#middleware == 0 and not state.validate and not state.transaction and not state.policy) then
+	if
+		state.direct
+		or (#middleware == 0 and not state.validate and not state.transaction and not state.policy)
+	then
 		if state.empty then
 			packedReader.finish(payloads, cursor)
 			return count
 		end
 
 		for _index = 1, count do
-			local payload
+			-- Decoded and dropped. With no middleware, validation, transaction
+			-- or policy to run, this pass exists only to walk the cursor past
+			-- the payloads.
+			local _payload
 
-			payload, cursor = packedReader.take(payloads, cursor)
+			_payload, cursor = packedReader.take(payloads, cursor)
 		end
 
 		packedReader.finish(payloads, cursor)
@@ -466,8 +495,16 @@ local function readPackedBatchCount(state: PacketState, sender: Player?, count: 
 	return accepted
 end
 
-local function dispatchPackedCountOnly(state: PacketState, sender: Player?, count: number, payloads: buffer): boolean
-	if not state.direct and (#middleware ~= 0 or state.validate or state.transaction or state.policy) then
+local function dispatchPackedCountOnly(
+	state: PacketState,
+	sender: Player?,
+	count: number,
+	payloads: buffer
+): boolean
+	if
+		not state.direct
+		and (#middleware ~= 0 or state.validate or state.transaction or state.policy)
+	then
 		return false
 	end
 
@@ -492,7 +529,12 @@ local function dispatchPackedCountOnly(state: PacketState, sender: Player?, coun
 	return true
 end
 
-local function dispatchUnpackedBatch(state: PacketState, sender: Player?, count: number, payloads: {any}): boolean
+local function dispatchUnpackedBatch(
+	state: PacketState,
+	sender: Player?,
+	count: number,
+	payloads: { any }
+): boolean
 	local hasBatchListeners = state.batchSignal:hasListeners()
 	local hasBatchCountListeners = state.batchCountSignal:hasListeners()
 
@@ -500,7 +542,10 @@ local function dispatchUnpackedBatch(state: PacketState, sender: Player?, count:
 		return false
 	end
 
-	if state.direct or (#middleware == 0 and not state.validate and not state.transaction and not state.policy) then
+	if
+		state.direct
+		or (#middleware == 0 and not state.validate and not state.transaction and not state.policy)
+	then
 		if hasBatchListeners then
 			local values = if state.empty then createArray(count) else payloads
 			dispatchBatch(state, sender, values, count)
@@ -513,7 +558,7 @@ local function dispatchUnpackedBatch(state: PacketState, sender: Player?, count:
 		return true
 	end
 
-	local values: {any}? = if hasBatchListeners then createArray(count) else nil
+	local values: { any }? = if hasBatchListeners then createArray(count) else nil
 	local accepted = 0
 
 	for index = 1, count do
@@ -538,12 +583,12 @@ local function dispatchUnpackedBatch(state: PacketState, sender: Player?, count:
 		accepted += 1
 
 		if hasBatchListeners and not state.empty then
-			(values :: {any})[accepted] = payload
+			(values :: { any })[accepted] = payload
 		end
 	end
 
 	if hasBatchListeners and accepted > 0 then
-		dispatchBatch(state, sender, values :: {any}, accepted)
+		dispatchBatch(state, sender, values :: { any }, accepted)
 	end
 
 	if hasBatchCountListeners and accepted > 0 then
@@ -553,7 +598,24 @@ local function dispatchUnpackedBatch(state: PacketState, sender: Player?, count:
 	return true
 end
 
-local function dispatchPacked(state: PacketState, sender: Player?, count: number, payloads: buffer): ()
+-- pcall is typed to return the callee's own results after the boolean, and
+-- dispatchPacked returns none; on failure the second value is the error.
+-- Naming the real shape is what lets it be bound.
+local guardedDispatch: (
+	(PacketState, Player?, number, buffer) -> (),
+	PacketState,
+	Player?,
+	number,
+	buffer
+) -> (boolean, any) =
+	pcall :: any
+
+local function dispatchPacked(
+	state: PacketState,
+	sender: Player?,
+	count: number,
+	payloads: buffer
+): ()
 	if state.batchSignal:hasListeners() then
 		local values, accepted = readPackedBatch(state, sender, count, payloads)
 
@@ -581,7 +643,13 @@ local function dispatchPacked(state: PacketState, sender: Player?, count: number
 
 	local cursor = 0
 	local packedReader = state.reader :: any
-	local callback = if state.direct or (#middleware == 0 and not state.validate and not state.transaction and not state.policy)
+	local callback = if state.direct
+			or (
+				#middleware == 0
+				and not state.validate
+				and not state.transaction
+				and not state.policy
+			)
 		then state.signal:getSingleListener()
 		else nil
 
@@ -637,7 +705,9 @@ local function receiveControl(sender: Player?, payload: any): ()
 		return
 	end
 
-	local state = packetsById[packetId]
+	-- typeOf is this module's own helper, so the guard above narrows nothing
+	-- the analyser can see. The cast says what the guard already proved.
+	local state = packetsById[packetId :: number]
 	if not state then
 		Stats.bump("droppedPackets")
 		Stats.warn(`[VNet]: Dropped control packet for unknown packet id {packetId}.`)
@@ -677,7 +747,9 @@ local function receiveOne(lane: Lane, sender: Player?, id: any, payload: any): (
 	local state = packetsById[id]
 	if not state then
 		Stats.bump("droppedPackets")
-		Stats.warn(`[VNet]: Dropped unknown packet id {id}. Require the same VNet schema on server and client.`)
+		Stats.warn(
+			`[VNet]: Dropped unknown packet id {id}. Require the same VNet schema on server and client.`
+		)
 		return
 	end
 
@@ -725,7 +797,11 @@ local function receiveOne(lane: Lane, sender: Player?, id: any, payload: any): (
 end
 
 local function makePacket(state: PacketState)
-	local packet = {}
+	-- Typed any because the shape genuinely differs by realm: on the server
+	-- packet.many takes a player and the payloads, on the client just the
+	-- payloads. Luau fixes the shape at the first branch it sees and then
+	-- rejects the other. This is the same reason packetApi below is any.
+	local packet: any = {}
 
 	packet.id = state.id
 	packet.name = state.name
@@ -733,7 +809,7 @@ local function makePacket(state: PacketState)
 	packet.fast = state.lane == "fast"
 
 	local packetId = state.id
-	local packetLane = state.lane
+	local packetLane: Lane = state.lane
 	local packetCodec = state.codec
 	local packetImmediate = state.immediate
 	local packetDirect = state.direct
@@ -742,7 +818,10 @@ local function makePacket(state: PacketState)
 
 	local function assertDeltaPacket(methodName: string): ()
 		if not state.delta then
-			error("[VNet]: packet." .. methodName .. " can only be used with VNet.delta packets.", 3)
+			error(
+				"[VNet]: packet." .. methodName .. " can only be used with VNet.delta packets.",
+				3
+			)
 		end
 	end
 
@@ -835,17 +914,39 @@ local function makePacket(state: PacketState)
 				validate(state, payload, false)
 
 				if state.codec then
-					Transport.toPlayerPackedOne(state.lane, player, state.id, state.codec, payload, state.immediate, packetDirectImmediate)
+					Transport.toPlayerPackedOne(
+						state.lane,
+						player,
+						state.id,
+						state.codec,
+						payload,
+						state.immediate,
+						packetDirectImmediate
+					)
 				else
-					Transport.toPlayer(state.lane, player, state.id, payload, state.immediate, packetDirectImmediate)
+					Transport.toPlayer(
+						state.lane,
+						player,
+						state.id,
+						payload,
+						state.immediate,
+						packetDirectImmediate
+					)
 				end
 			end
 
-			function packet.many(player: Player, payloads: {any}): ()
+			function packet.many(player: Player, payloads: { any }): ()
 				validateMany(state, payloads)
 
 				if state.codec then
-					Transport.toPlayerPackedMany(state.lane, player, state.id, state.codec, payloads, state.immediate)
+					Transport.toPlayerPackedMany(
+						state.lane,
+						player,
+						state.id,
+						state.codec,
+						payloads,
+						state.immediate
+					)
 				else
 					Transport.toPlayerMany(state.lane, player, state.id, payloads, state.immediate)
 				end
@@ -853,15 +954,37 @@ local function makePacket(state: PacketState)
 		else
 			function packet.send(player: Player, payload: any): ()
 				if state.codec then
-					Transport.toPlayerPackedOne(state.lane, player, state.id, state.codec, payload, state.immediate, packetDirectImmediate)
+					Transport.toPlayerPackedOne(
+						state.lane,
+						player,
+						state.id,
+						state.codec,
+						payload,
+						state.immediate,
+						packetDirectImmediate
+					)
 				else
-					Transport.toPlayer(state.lane, player, state.id, payload, state.immediate, packetDirectImmediate)
+					Transport.toPlayer(
+						state.lane,
+						player,
+						state.id,
+						payload,
+						state.immediate,
+						packetDirectImmediate
+					)
 				end
 			end
 
-			function packet.many(player: Player, payloads: {any}): ()
+			function packet.many(player: Player, payloads: { any }): ()
 				if state.codec then
-					Transport.toPlayerPackedMany(state.lane, player, state.id, state.codec, payloads, state.immediate)
+					Transport.toPlayerPackedMany(
+						state.lane,
+						player,
+						state.id,
+						state.codec,
+						payloads,
+						state.immediate
+					)
 				else
 					Transport.toPlayerMany(state.lane, player, state.id, payloads, state.immediate)
 				end
@@ -872,13 +995,25 @@ local function makePacket(state: PacketState)
 			function packet.send(payload: any): ()
 				validate(state, payload, false)
 				firePrediction(state, payload)
-				Transport.toServerPackedOne(packetLane, packetId, packetCodec, payload, packetImmediate)
+				Transport.toServerPackedOne(
+					packetLane,
+					packetId,
+					packetCodec,
+					payload,
+					packetImmediate
+				)
 			end
 
-			function packet.many(payloads: {any}): ()
+			function packet.many(payloads: { any }): ()
 				validateMany(state, payloads)
 				firePredictions(state, payloads)
-				Transport.toServerPackedMany(packetLane, packetId, packetCodec, payloads, packetImmediate)
+				Transport.toServerPackedMany(
+					packetLane,
+					packetId,
+					packetCodec,
+					payloads,
+					packetImmediate
+				)
 			end
 		else
 			function packet.send(payload: any): ()
@@ -887,7 +1022,7 @@ local function makePacket(state: PacketState)
 				Transport.toServer(packetLane, packetId, payload, packetImmediate)
 			end
 
-			function packet.many(payloads: {any}): ()
+			function packet.many(payloads: { any }): ()
 				validateMany(state, payloads)
 				firePredictions(state, payloads)
 				Transport.toServerMany(packetLane, packetId, payloads, packetImmediate)
@@ -898,9 +1033,20 @@ local function makePacket(state: PacketState)
 			local writePacket: any
 
 			if packetKind == "u32" or packetKind == "uint32" then
-				writePacket = Transport.serverU32Writer(packetLane, packetId, packetImmediate, packetDirectImmediate)
+				writePacket = Transport.serverU32Writer(
+					packetLane,
+					packetId,
+					packetImmediate,
+					packetDirectImmediate
+				)
 			else
-				writePacket = Transport.serverPackedWriter(packetLane, packetId, packetCodec, packetImmediate, packetDirectImmediate)
+				writePacket = Transport.serverPackedWriter(
+					packetLane,
+					packetId,
+					packetCodec,
+					packetImmediate,
+					packetDirectImmediate
+				)
 			end
 
 			local writePacketFn: (any) -> () = writePacket
@@ -914,18 +1060,35 @@ local function makePacket(state: PacketState)
 			end
 
 			if packetDirect then
-				function packet.many(payloads: {any}): ()
-					Transport.toServerPackedMany(packetLane, packetId, packetCodec, payloads, packetImmediate)
+				function packet.many(payloads: { any }): ()
+					Transport.toServerPackedMany(
+						packetLane,
+						packetId,
+						packetCodec,
+						payloads,
+						packetImmediate
+					)
 				end
-			elseif packetKind == "u32" or packetKind == "uint32" then
-				function packet.many(payloads: {any}): ()
-					firePredictions(state, payloads)
-					Transport.toServerPackedMany(packetLane, packetId, packetCodec, payloads, packetImmediate)
-				end
+			-- No u32 branch here, unlike the single-send path above and
+			-- flushMany below, which both take Transport's raw four-byte route
+			-- for u32 packets. There was one, and its body was the generic body
+			-- character for character, so the condition decided nothing; it is
+			-- gone rather than left looking like a specialisation that exists.
+			--
+			-- Wiring it up would mean this path stops queueing through the
+			-- codec and starts writing raw and flushing, which is a wire-format
+			-- decision rather than a refactor: it needs somebody who can say the
+			-- two encodings are byte-identical.
 			else
-				function packet.many(payloads: {any}): ()
+				function packet.many(payloads: { any }): ()
 					firePredictions(state, payloads)
-					Transport.toServerPackedMany(packetLane, packetId, packetCodec, payloads, packetImmediate)
+					Transport.toServerPackedMany(
+						packetLane,
+						packetId,
+						packetCodec,
+						payloads,
+						packetImmediate
+					)
 				end
 			end
 		else
@@ -936,7 +1099,7 @@ local function makePacket(state: PacketState)
 					writePacketFn(payload)
 				end
 
-				function packet.many(payloads: {any}): ()
+				function packet.many(payloads: { any }): ()
 					for index = 1, #payloads do
 						writePacketFn(payloads[index])
 					end
@@ -946,7 +1109,7 @@ local function makePacket(state: PacketState)
 					Transport.toServer(packetLane, packetId, payload, packetImmediate)
 				end
 
-				function packet.many(payloads: {any}): ()
+				function packet.many(payloads: { any }): ()
 					Transport.toServerMany(packetLane, packetId, payloads, packetImmediate)
 				end
 			else
@@ -955,7 +1118,7 @@ local function makePacket(state: PacketState)
 					Transport.toServer(packetLane, packetId, payload, packetImmediate)
 				end
 
-				function packet.many(payloads: {any}): ()
+				function packet.many(payloads: { any }): ()
 					firePredictions(state, payloads)
 					Transport.toServerMany(packetLane, packetId, payloads, packetImmediate)
 				end
@@ -967,7 +1130,7 @@ local function makePacket(state: PacketState)
 	packet.sendMany = packet.many
 
 	if IS_SERVER then
-		function packet.flushMany(player: Player, payloads: {any}): ()
+		function packet.flushMany(player: Player, payloads: { any }): ()
 			if state.validate then
 				validateMany(state, payloads)
 			end
@@ -980,13 +1143,19 @@ local function makePacket(state: PacketState)
 			local directCodec = state.codec
 
 			if directCodec then
-				Transport.toPlayerPacked(state.lane, player, state.id, count, Codec.encodeMany(directCodec, payloads))
+				Transport.toPlayerPacked(
+					state.lane,
+					player,
+					state.id,
+					count,
+					Codec.encodeMany(directCodec, payloads)
+				)
 			else
 				Transport.toPlayerMany(state.lane, player, state.id, payloads, true)
 			end
 		end
 	else
-		function packet.flushMany(payloads: {any}): ()
+		function packet.flushMany(payloads: { any }): ()
 			if state.validate then
 				validateMany(state, payloads)
 			end
@@ -1007,7 +1176,12 @@ local function makePacket(state: PacketState)
 				if packetKind == "u32" or packetKind == "uint32" then
 					Transport.toServerU32(packetLane, packetId, payloads)
 				else
-					Transport.toServerPacked(packetLane, packetId, count, Codec.encodeMany(packetCodec, payloads))
+					Transport.toServerPacked(
+						packetLane,
+						packetId,
+						count,
+						Codec.encodeMany(packetCodec, payloads)
+					)
 				end
 			else
 				Transport.toServerMany(packetLane, packetId, payloads, true)
@@ -1025,12 +1199,16 @@ local function makePacket(state: PacketState)
 				error("[VNet]: packet.sendDelta can only be used with VNet.delta packets.", 3)
 			end
 
-			if typeof(first) == "Instance" and first:IsA("Player") then
+			-- Cast rather than narrowed: the newer solver does not carry a typeof
+			-- narrowing onto an any, so IsA reads as uncallable.
+			local firstInstance = if typeof(first) == "Instance" then first :: Instance else nil
+
+			if firstInstance ~= nil and firstInstance:IsA("Player") then
 				packetApi.send(first, deltaPayload(second, third))
 				return
 			end
 
-			packet.all(deltaPayload(first, second))
+			packetApi.all(deltaPayload(first, second))
 		end
 
 		function packet.manyDelta(first: any, second: any): ()
@@ -1038,12 +1216,16 @@ local function makePacket(state: PacketState)
 				error("[VNet]: packet.manyDelta can only be used with VNet.delta packets.", 3)
 			end
 
-			if typeof(first) == "Instance" and first:IsA("Player") then
+			-- Cast rather than narrowed: the newer solver does not carry a typeof
+			-- narrowing onto an any, so IsA reads as uncallable.
+			local firstInstance = if typeof(first) == "Instance" then first :: Instance else nil
+
+			if firstInstance ~= nil and firstInstance:IsA("Player") then
 				packetApi.many(first, second)
 				return
 			end
 
-			packet.allMany(first)
+			packetApi.allMany(first)
 		end
 
 		function packet.flushManyDelta(first: any, second: any): ()
@@ -1051,32 +1233,36 @@ local function makePacket(state: PacketState)
 				error("[VNet]: packet.flushManyDelta can only be used with VNet.delta packets.", 3)
 			end
 
-			if typeof(first) == "Instance" and first:IsA("Player") then
+			-- Cast rather than narrowed: the newer solver does not carry a typeof
+			-- narrowing onto an any, so IsA reads as uncallable.
+			local firstInstance = if typeof(first) == "Instance" then first :: Instance else nil
+
+			if firstInstance ~= nil and firstInstance:IsA("Player") then
 				packetApi.flushMany(first, second)
 				return
 			end
 
-			packet.allMany(first)
+			packetApi.allMany(first)
 		end
 
 		function packet.toDelta(player: Player, entityId: any, changes: any): ()
 			assertDeltaPacket("toDelta")
-			packet.to(player, deltaPayload(entityId, changes))
+			packetApi.to(player, deltaPayload(entityId, changes))
 		end
 
 		function packet.allDelta(entityId: any, changes: any): ()
 			assertDeltaPacket("allDelta")
-			packet.all(deltaPayload(entityId, changes))
+			packetApi.all(deltaPayload(entityId, changes))
 		end
 
-		function packet.listDelta(players: {Player}, entityId: any, changes: any): ()
+		function packet.listDelta(players: { Player }, entityId: any, changes: any): ()
 			assertDeltaPacket("listDelta")
-			packet.list(players, deltaPayload(entityId, changes))
+			packetApi.list(players, deltaPayload(entityId, changes))
 		end
 
 		function packet.exceptDelta(player: Player, entityId: any, changes: any): ()
 			assertDeltaPacket("exceptDelta")
-			packet.except(player, deltaPayload(entityId, changes))
+			packetApi.except(player, deltaPayload(entityId, changes))
 		end
 	else
 		function packet.sendDelta(entityId: any, changes: any): ()
@@ -1087,7 +1273,7 @@ local function makePacket(state: PacketState)
 			packetApi.send(deltaPayload(entityId, changes))
 		end
 
-		function packet.manyDelta(deltas: {any}): ()
+		function packet.manyDelta(deltas: { any }): ()
 			if not state.delta then
 				error("[VNet]: packet.manyDelta can only be used with VNet.delta packets.", 3)
 			end
@@ -1095,7 +1281,7 @@ local function makePacket(state: PacketState)
 			packetApi.many(deltas)
 		end
 
-		function packet.flushManyDelta(deltas: {any}): ()
+		function packet.flushManyDelta(deltas: { any }): ()
 			if not state.delta then
 				error("[VNet]: packet.flushManyDelta can only be used with VNet.delta packets.", 3)
 			end
@@ -1118,9 +1304,24 @@ local function makePacket(state: PacketState)
 				validate(state, payload, false)
 
 				if state.codec then
-					Transport.toPlayerPackedOne(state.lane, player, state.id, state.codec, payload, state.immediate, packetDirectImmediate)
+					Transport.toPlayerPackedOne(
+						state.lane,
+						player,
+						state.id,
+						state.codec,
+						payload,
+						state.immediate,
+						packetDirectImmediate
+					)
 				else
-					Transport.toPlayer(state.lane, player, state.id, payload, state.immediate, packetDirectImmediate)
+					Transport.toPlayer(
+						state.lane,
+						player,
+						state.id,
+						payload,
+						state.immediate,
+						packetDirectImmediate
+					)
 				end
 			end
 
@@ -1128,37 +1329,63 @@ local function makePacket(state: PacketState)
 				validate(state, payload, false)
 
 				if state.codec then
-					Transport.toAllPackedOne(state.lane, state.id, state.codec, payload, state.immediate)
+					Transport.toAllPackedOne(
+						state.lane,
+						state.id,
+						state.codec,
+						payload,
+						state.immediate
+					)
 				else
 					Transport.toAll(state.lane, state.id, payload, state.immediate)
 				end
 			end
 
-			function packet.allMany(payloads: {any}): ()
+			function packet.allMany(payloads: { any }): ()
 				validateMany(state, payloads)
 
 				if state.codec then
-					Transport.toAllPackedMany(state.lane, state.id, state.codec, payloads, state.immediate)
+					Transport.toAllPackedMany(
+						state.lane,
+						state.id,
+						state.codec,
+						payloads,
+						state.immediate
+					)
 				else
 					Transport.toAllMany(state.lane, state.id, payloads, state.immediate)
 				end
 			end
 
-			function packet.list(players: {Player}, payload: any): ()
+			function packet.list(players: { Player }, payload: any): ()
 				validate(state, payload, false)
 
 				if state.codec then
-					Transport.toListPackedOne(state.lane, players, state.id, state.codec, payload, state.immediate)
+					Transport.toListPackedOne(
+						state.lane,
+						players,
+						state.id,
+						state.codec,
+						payload,
+						state.immediate
+					)
 				else
 					Transport.toList(state.lane, players, state.id, payload, state.immediate)
 				end
 			end
 
-			function packet.listMany(players: {Player}, payloads: {any}): ()
+			function packet.listMany(players: { Player }, payloads: { any }): ()
 				validateMany(state, payloads)
 
 				if state.codec then
-					Transport.toListPackedMany(state.lane, players, state.id, state.codec, payloads, state.immediate)
+					Transport.toListPackedMany(
+						state.lane,
+						players,
+						state.id,
+						state.codec,
+						payloads,
+						state.immediate
+					)
 				else
 					Transport.toListMany(state.lane, players, state.id, payloads, state.immediate)
 				end
@@ -1168,17 +1395,31 @@ local function makePacket(state: PacketState)
 				validate(state, payload, false)
 
 				if state.codec then
-					Transport.toExceptPackedOne(state.lane, player, state.id, state.codec, payload, state.immediate)
+					Transport.toExceptPackedOne(
+						state.lane,
+						player,
+						state.id,
+						state.codec,
+						payload,
+						state.immediate
+					)
 				else
 					Transport.toExcept(state.lane, player, state.id, payload, state.immediate)
 				end
 			end
 
-			function packet.exceptMany(player: Player, payloads: {any}): ()
+			function packet.exceptMany(player: Player, payloads: { any }): ()
 				validateMany(state, payloads)
 
 				if state.codec then
-					Transport.toExceptPackedMany(state.lane, player, state.id, state.codec, payloads, state.immediate)
+					Transport.toExceptPackedMany(
+						state.lane,
+						player,
+						state.id,
+						state.codec,
+						payloads,
+						state.immediate
+					)
 				else
 					Transport.toExceptMany(state.lane, player, state.id, payloads, state.immediate)
 				end
@@ -1186,39 +1427,80 @@ local function makePacket(state: PacketState)
 		else
 			function packet.to(player: Player, payload: any): ()
 				if state.codec then
-					Transport.toPlayerPackedOne(state.lane, player, state.id, state.codec, payload, state.immediate, packetDirectImmediate)
+					Transport.toPlayerPackedOne(
+						state.lane,
+						player,
+						state.id,
+						state.codec,
+						payload,
+						state.immediate,
+						packetDirectImmediate
+					)
 				else
-					Transport.toPlayer(state.lane, player, state.id, payload, state.immediate, packetDirectImmediate)
+					Transport.toPlayer(
+						state.lane,
+						player,
+						state.id,
+						payload,
+						state.immediate,
+						packetDirectImmediate
+					)
 				end
 			end
 
 			function packet.all(payload: any): ()
 				if state.codec then
-					Transport.toAllPackedOne(state.lane, state.id, state.codec, payload, state.immediate)
+					Transport.toAllPackedOne(
+						state.lane,
+						state.id,
+						state.codec,
+						payload,
+						state.immediate
+					)
 				else
 					Transport.toAll(state.lane, state.id, payload, state.immediate)
 				end
 			end
 
-			function packet.allMany(payloads: {any}): ()
+			function packet.allMany(payloads: { any }): ()
 				if state.codec then
-					Transport.toAllPackedMany(state.lane, state.id, state.codec, payloads, state.immediate)
+					Transport.toAllPackedMany(
+						state.lane,
+						state.id,
+						state.codec,
+						payloads,
+						state.immediate
+					)
 				else
 					Transport.toAllMany(state.lane, state.id, payloads, state.immediate)
 				end
 			end
 
-			function packet.list(players: {Player}, payload: any): ()
+			function packet.list(players: { Player }, payload: any): ()
 				if state.codec then
-					Transport.toListPackedOne(state.lane, players, state.id, state.codec, payload, state.immediate)
+					Transport.toListPackedOne(
+						state.lane,
+						players,
+						state.id,
+						state.codec,
+						payload,
+						state.immediate
+					)
 				else
 					Transport.toList(state.lane, players, state.id, payload, state.immediate)
 				end
 			end
 
-			function packet.listMany(players: {Player}, payloads: {any}): ()
+			function packet.listMany(players: { Player }, payloads: { any }): ()
 				if state.codec then
-					Transport.toListPackedMany(state.lane, players, state.id, state.codec, payloads, state.immediate)
+					Transport.toListPackedMany(
+						state.lane,
+						players,
+						state.id,
+						state.codec,
+						payloads,
+						state.immediate
+					)
 				else
 					Transport.toListMany(state.lane, players, state.id, payloads, state.immediate)
 				end
@@ -1226,15 +1508,29 @@ local function makePacket(state: PacketState)
 
 			function packet.except(player: Player, payload: any): ()
 				if state.codec then
-					Transport.toExceptPackedOne(state.lane, player, state.id, state.codec, payload, state.immediate)
+					Transport.toExceptPackedOne(
+						state.lane,
+						player,
+						state.id,
+						state.codec,
+						payload,
+						state.immediate
+					)
 				else
 					Transport.toExcept(state.lane, player, state.id, payload, state.immediate)
 				end
 			end
 
-			function packet.exceptMany(player: Player, payloads: {any}): ()
+			function packet.exceptMany(player: Player, payloads: { any }): ()
 				if state.codec then
-					Transport.toExceptPackedMany(state.lane, player, state.id, state.codec, payloads, state.immediate)
+					Transport.toExceptPackedMany(
+						state.lane,
+						player,
+						state.id,
+						state.codec,
+						payloads,
+						state.immediate
+					)
 				else
 					Transport.toExceptMany(state.lane, player, state.id, payloads, state.immediate)
 				end
@@ -1262,7 +1558,7 @@ local function makePacket(state: PacketState)
 	return table.freeze(packet)
 end
 
-function Registry.define(name: string, config: {[string]: any})
+function Registry.define(name: string, config: { [string]: any })
 	if typeof(name) ~= "string" or name == "" then
 		error("[VNet]: Packet name must be a non-empty string.", 3)
 	end
@@ -1288,11 +1584,20 @@ function Registry.define(name: string, config: {[string]: any})
 	local guardCheck = getField(guard, "check") :: (any) -> boolean
 	local direct = config.direct == true or config.thin == true or config.raw == true
 	local validateOption = config.validate
-	local schemaValidate = if direct then false elseif typeof(validateOption) == "boolean" then validateOption else Config.validate
-	local isTransaction = if direct then false else config.transaction == true or config.dedupe == true
+	local schemaValidate = if direct
+		then false
+		elseif typeof(validateOption) == "boolean" then validateOption
+		else Config.validate
+	local isTransaction = if direct
+		then false
+		else config.transaction == true or config.dedupe == true
 	local transactionKey = config.transactionKey or config.idempotencyKey or DEFAULT_TRANSACTION_KEY
-	local transactionTtl = config.transactionTtl or config.transactionTtlSeconds or DEFAULT_TRANSACTION_TTL
-	local transactionMaxKeys = config.transactionMaxKeys or config.transactionCapacity or DEFAULT_TRANSACTION_MAX_KEYS
+	local transactionTtl = config.transactionTtl
+		or config.transactionTtlSeconds
+		or DEFAULT_TRANSACTION_TTL
+	local transactionMaxKeys = config.transactionMaxKeys
+		or config.transactionCapacity
+		or DEFAULT_TRANSACTION_MAX_KEYS
 
 	if isTransaction then
 		if typeof(transactionKey) ~= "string" or transactionKey == "" then
@@ -1303,7 +1608,11 @@ function Registry.define(name: string, config: {[string]: any})
 			error(`[VNet]: Packet "{name}" transactionTtl must be greater than 0.`, 3)
 		end
 
-		if typeof(transactionMaxKeys) ~= "number" or transactionMaxKeys % 1 ~= 0 or transactionMaxKeys < 1 then
+		if
+			typeof(transactionMaxKeys) ~= "number"
+			or transactionMaxKeys % 1 ~= 0
+			or transactionMaxKeys < 1
+		then
 			error(`[VNet]: Packet "{name}" transactionMaxKeys must be a positive integer.`, 3)
 		end
 	end
@@ -1311,7 +1620,11 @@ function Registry.define(name: string, config: {[string]: any})
 	local state: any = {
 		id = id,
 		name = name,
-		lane = if config.fast == true or config.lane == "fast" or config.reliable == false then "fast" else "reliable",
+		lane = if config.fast == true
+				or config.lane == "fast"
+				or config.reliable == false
+			then "fast"
+			else "reliable",
 		guard = guard,
 		guardKind = guardKind,
 		guardCheck = guardCheck,
@@ -1385,7 +1698,8 @@ function Registry.receivePackedOne(lane: Lane, sender: Player?, id: any, payload
 		Stats.bump("receivedPackedBytes", bytes)
 	end
 
-	if state.batchCountSignal:hasListeners()
+	if
+		state.batchCountSignal:hasListeners()
 		and not state.batchSignal:hasListeners()
 		and (state.direct or #middleware == 0)
 		and not state.validate
@@ -1400,7 +1714,7 @@ function Registry.receivePackedOne(lane: Lane, sender: Player?, id: any, payload
 		end
 	end
 
-	local ok, message = pcall(dispatchPacked, state, sender, 1, payloads)
+	local ok, message = guardedDispatch(dispatchPacked, state, sender, 1, payloads)
 
 	if not ok then
 		Stats.bump("droppedPackets")
@@ -1408,8 +1722,16 @@ function Registry.receivePackedOne(lane: Lane, sender: Player?, id: any, payload
 	end
 end
 
-function Registry.receiveBatch(lane: Lane, sender: Player?, count: any, ids: any, payloads: any, packed: any): ()
-	if typeOf(count) ~= "number"
+function Registry.receiveBatch(
+	lane: Lane,
+	sender: Player?,
+	count: any,
+	ids: any,
+	payloads: any,
+	packed: any
+): ()
+	if
+		typeOf(count) ~= "number"
 		or count < 0
 		or count % 1 ~= 0
 		or count > MAX_BATCH_COUNT
@@ -1442,7 +1764,12 @@ function Registry.receiveBatch(lane: Lane, sender: Player?, count: any, ids: any
 	if packed == true then
 		local state = packetsById[ids]
 
-		if typeOf(ids) ~= "number" or not state or not state.codec or typeOf(payloads) ~= "buffer" then
+		if
+			typeOf(ids) ~= "number"
+			or not state
+			or not state.codec
+			or typeOf(payloads) ~= "buffer"
+		then
 			Stats.bump("droppedPackets")
 			Stats.warn("[VNet]: Dropped invalid packed batch.")
 			return
@@ -1454,7 +1781,7 @@ function Registry.receiveBatch(lane: Lane, sender: Player?, count: any, ids: any
 			return
 		end
 
-		local ok, message = pcall(dispatchPacked, state, sender, count, payloads)
+		local ok, message = guardedDispatch(dispatchPacked, state, sender, count, payloads)
 
 		if not ok then
 			Stats.bump("droppedPackets")
@@ -1491,7 +1818,9 @@ function Registry.receiveBatch(lane: Lane, sender: Player?, count: any, ids: any
 
 		if not state then
 			Stats.bump("droppedPackets")
-			Stats.warn(`[VNet]: Dropped unknown packet id {ids}. Require the same VNet schema on server and client.`)
+			Stats.warn(
+				`[VNet]: Dropped unknown packet id {ids}. Require the same VNet schema on server and client.`
+			)
 			return
 		end
 
@@ -1554,7 +1883,9 @@ function Registry.receiveBatch(lane: Lane, sender: Player?, count: any, ids: any
 		local state = packetsById[id]
 		if not state then
 			Stats.bump("droppedPackets")
-			Stats.warn(`[VNet]: Dropped unknown packet id {id}. Require the same VNet schema on server and client.`)
+			Stats.warn(
+				`[VNet]: Dropped unknown packet id {id}. Require the same VNet schema on server and client.`
+			)
 			continue
 		end
 
