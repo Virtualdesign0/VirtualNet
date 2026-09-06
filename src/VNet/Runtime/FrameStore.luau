@@ -5,8 +5,8 @@ local FrameStore = {}
 export type FrameBatch = {
 	count: number,
 	singleId: number,
-	ids: {number},
-	payloads: {any},
+	ids: { number },
+	payloads: { any },
 	borrowed: boolean,
 }
 
@@ -36,7 +36,7 @@ function FrameStore.reset(batch: FrameBatch): ()
 	clear(batch.payloads)
 end
 
-function FrameStore.resetFor(owner: {[any]: FrameBatch}, key: any): ()
+function FrameStore.resetFor(owner: { [any]: FrameBatch }, key: any): ()
 	local batch = owner[key]
 
 	if batch then
@@ -95,7 +95,7 @@ function FrameStore.push(batch: FrameBatch, id: number, payload: any): ()
 	batch.payloads[position] = payload
 end
 
-function FrameStore.pushMany(batch: FrameBatch, id: number, payloads: {any}): ()
+function FrameStore.pushMany(batch: FrameBatch, id: number, payloads: { any }): ()
 	local start = batch.count
 	local amount = #payloads
 
@@ -133,7 +133,7 @@ function FrameStore.pushMany(batch: FrameBatch, id: number, payloads: {any}): ()
 	batch.count = start + amount
 end
 
-function FrameStore.pushFor(owner: {[any]: FrameBatch}, key: any, id: number, payload: any): ()
+function FrameStore.pushFor(owner: { [any]: FrameBatch }, key: any, id: number, payload: any): ()
 	local batch = owner[key]
 
 	if not batch then
@@ -144,7 +144,12 @@ function FrameStore.pushFor(owner: {[any]: FrameBatch}, key: any, id: number, pa
 	FrameStore.push(batch, id, payload)
 end
 
-function FrameStore.pushManyFor(owner: {[any]: FrameBatch}, key: any, id: number, payloads: {any}): ()
+function FrameStore.pushManyFor(
+	owner: { [any]: FrameBatch },
+	key: any,
+	id: number,
+	payloads: { any }
+): ()
 	local batch = owner[key]
 
 	if not batch then
