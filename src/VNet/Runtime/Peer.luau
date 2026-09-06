@@ -10,7 +10,14 @@ local Peer = {}
 local started = false
 local ready = false
 
-local function receiveRemote(lane: "reliable" | "fast", sender: Player?, first: any, second: any, third: any, fourth: any): ()
+local function receiveRemote(
+	lane: "reliable" | "fast",
+	sender: Player?,
+	first: any,
+	second: any,
+	third: any,
+	fourth: any
+): ()
 	if first == Protocol.SINGLE then
 		Registry.receive(lane, sender, second, third)
 		return
@@ -43,25 +50,29 @@ function Peer.start(): ()
 	Bridge.start()
 
 	if RunService:IsServer() then
-		Bridge.remote("reliable").OnServerEvent:Connect(function(player: Player, first: any, second: any, third: any, fourth: any)
-			receiveRemote("reliable", player, first, second, third, fourth)
-		end)
+		Bridge.remote("reliable").OnServerEvent
+			:Connect(function(player: Player, first: any, second: any, third: any, fourth: any)
+				receiveRemote("reliable", player, first, second, third, fourth)
+			end)
 
-		Bridge.remote("fast").OnServerEvent:Connect(function(player: Player, first: any, second: any, third: any, fourth: any)
-			receiveRemote("fast", player, first, second, third, fourth)
-		end)
+		Bridge.remote("fast").OnServerEvent
+			:Connect(function(player: Player, first: any, second: any, third: any, fourth: any)
+				receiveRemote("fast", player, first, second, third, fourth)
+			end)
 
 		ready = true
 		return
 	end
 
-	Bridge.remote("reliable").OnClientEvent:Connect(function(first: any, second: any, third: any, fourth: any)
-		receiveRemote("reliable", nil, first, second, third, fourth)
-	end)
+	Bridge.remote("reliable").OnClientEvent
+		:Connect(function(first: any, second: any, third: any, fourth: any)
+			receiveRemote("reliable", nil, first, second, third, fourth)
+		end)
 
-	Bridge.remote("fast").OnClientEvent:Connect(function(first: any, second: any, third: any, fourth: any)
-		receiveRemote("fast", nil, first, second, third, fourth)
-	end)
+	Bridge.remote("fast").OnClientEvent
+		:Connect(function(first: any, second: any, third: any, fourth: any)
+			receiveRemote("fast", nil, first, second, third, fourth)
+		end)
 
 	ready = true
 end
