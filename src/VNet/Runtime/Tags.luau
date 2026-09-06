@@ -35,39 +35,48 @@ local function defaultIdOf(kind: string, attributeName: string, instance: Instan
 	return nil
 end
 
-function Tags.replicate(tag: string, options: {[any]: any}?)
+function Tags.replicate(tag: string, options: { [any]: any }?)
 	tag = assertTag(tag)
-	options = options or {}
+	-- A new local rather than a reassigned parameter: the analyser does not
+	-- carry the narrowing through an assignment back onto the parameter, so
+	-- every read below would still be seen as possibly nil. Annotated, because an
+	-- unannotated `or {}` widens to a union with the empty literal, which has no
+	-- keys of its own. Typed with a string key rather than any: every read below
+	-- is a field name, and the looser key buys nothing.
+	local settings: { [string]: any } = options or {}
 
-	local entityIdSpec = options.entityId or options.entityIdSpec or options.idSpec or "u32"
-	local referenceKind = options.kind or "Entity"
-	local attributeName = options.attribute or "VNetId"
-	local idOf = options.idOf
+	local entityIdSpec = settings.entityId or settings.entityIdSpec or settings.idSpec or "u32"
+	local referenceKind = settings.kind or "Entity"
+	local attributeName = settings.attribute or "VNetId"
+	-- Declared rather than left as the any that comes off settings: the guard
+	-- below proves it is nil-or-function, but a typeof narrowing on any leaves
+	-- the newer solver with something it will not call.
+	local idOf: ((Instance) -> any)? = settings.idOf
 
 	if idOf ~= nil and typeof(idOf) ~= "function" then
 		error("[VNet]: Tags.replicate idOf must be a function.", 3)
 	end
 
-	local packet = Registry.define(options.name or ("VNet.Tags." .. tag), {
-		id = options.id,
+	local packet = Registry.define(settings.name or ("VNet.Tags." .. tag), {
+		id = settings.id,
 		payload = {
 			entityId = entityIdSpec,
 			tagged = "bool",
 		},
-		lane = options.lane,
-		fast = options.fast,
-		reliable = options.reliable,
-		immediate = options.immediate,
-		validate = options.validate,
+		lane = settings.lane,
+		fast = settings.fast,
+		reliable = settings.reliable,
+		immediate = settings.immediate,
+		validate = settings.validate,
 	})
-	local changed = Signal.new(options.defer == true)
-	local state: {[any]: boolean} = {}
-	local connections: {RBXScriptConnection} = {}
+	local changed = Signal.new(settings.defer == true)
+	local state: { [any]: boolean? } = {}
+	local connections: { RBXScriptConnection } = {}
 	local disconnectPacket: (() -> ())? = nil
 	local api = {}
 
 	local function resolveId(instance: Instance): number?
-		if idOf then
+		if idOf ~= nil then
 			local value = idOf(instance)
 
 			if typeof(value) == "number" then
@@ -100,20 +109,27 @@ function Tags.replicate(tag: string, options: {[any]: any}?)
 	end
 
 	if IS_SERVER then
-		connections[#connections + 1] = CollectionService:GetInstanceAddedSignal(tag):Connect(function(instance: Instance)
-			publish(instance, true)
-		end)
-		connections[#connections + 1] = CollectionService:GetInstanceRemovedSignal(tag):Connect(function(instance: Instance)
-			publish(instance, false)
-		end)
+		connections[#connections + 1] = CollectionService:GetInstanceAddedSignal(tag)
+			:Connect(function(instance: Instance)
+				publish(instance, true)
+			end)
+		connections[#connections + 1] = CollectionService:GetInstanceRemovedSignal(tag)
+			:Connect(function(instance: Instance)
+				publish(instance, false)
+			end)
 	else
-		disconnectPacket = packet.on(function(payload: {[string]: any})
+		-- Typed at the assignment: packet is any, so on()'s return is too, and an
+		-- untyped stop function is something the newer solver will not call back
+		-- at the teardown below.
+		local stop: () -> () = packet.on(function(payload: { [string]: any })
 			local entityId = payload.entityId
 			local tagged = payload.tagged == true
 
 			state[entityId] = if tagged then true else nil
 			changed:fire(entityId, tagged)
 		end)
+
+		disconnectPacket = stop
 	end
 
 	function api.Sync(_self: any, player: Player?): ()
@@ -141,7 +157,7 @@ function Tags.replicate(tag: string, options: {[any]: any}?)
 
 		table.clear(connections)
 
-		if disconnectPacket then
+		if disconnectPacket ~= nil then
 			disconnectPacket()
 			disconnectPacket = nil
 		end
