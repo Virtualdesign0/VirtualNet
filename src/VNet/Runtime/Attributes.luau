@@ -19,7 +19,7 @@ local function assertInstance(instance: any): Instance
 	return instance
 end
 
-local function assertSchema(schema: any): {[string]: any}
+local function assertSchema(schema: any): { [string]: any }
 	if typeof(schema) ~= "table" then
 		error("[VNet]: Attributes.track expects a schema table.", 3)
 	end
@@ -43,38 +43,47 @@ local function defaultIdOf(kind: string, attributeName: string, instance: Instan
 	return nil
 end
 
-function Attributes.track(instance: Instance, schema: {[string]: any}, options: {[any]: any}?)
+function Attributes.track(instance: Instance, schema: { [string]: any }, options: { [any]: any }?)
 	instance = assertInstance(instance)
 	schema = assertSchema(schema)
-	options = options or {}
+	-- A new local rather than a reassigned parameter: the analyser does not
+	-- carry the narrowing through an assignment back onto the parameter, so
+	-- every read below would still be seen as possibly nil. Annotated, because an
+	-- unannotated `or {}` widens to a union with the empty literal, which has no
+	-- keys of its own. Typed with a string key rather than any: every read below
+	-- is a field name, and the looser key buys nothing.
+	local settings: { [string]: any } = options or {}
 
-	local entityIdSpec = options.entityId or options.entityIdSpec or options.idSpec or "u32"
-	local referenceKind = options.kind or "Entity"
-	local attributeName = options.idAttribute or "VNetId"
-	local idOf = options.idOf
+	local entityIdSpec = settings.entityId or settings.entityIdSpec or settings.idSpec or "u32"
+	local referenceKind = settings.kind or "Entity"
+	local attributeName = settings.idAttribute or "VNetId"
+	-- Declared rather than left as the any that comes off settings: the guard
+	-- below proves it is nil-or-function, but a typeof narrowing on any leaves
+	-- the newer solver with something it will not call.
+	local idOf: ((Instance) -> any)? = settings.idOf
 
 	if idOf ~= nil and typeof(idOf) ~= "function" then
 		error("[VNet]: Attributes.track idOf must be a function.", 3)
 	end
 
-	local packet = Registry.define(options.name or "VNet.Attributes", {
-		id = options.id,
+	local packet = Registry.define(settings.name or "VNet.Attributes", {
+		id = settings.id,
 		payload = Types.delta(schema, entityIdSpec),
 		delta = true,
-		lane = options.lane,
-		fast = options.fast,
-		reliable = options.reliable,
-		immediate = options.immediate,
-		validate = options.validate,
+		lane = settings.lane,
+		fast = settings.fast,
+		reliable = settings.reliable,
+		immediate = settings.immediate,
+		validate = settings.validate,
 	})
-	local changed = Signal.new(options.defer == true)
-	local state: {[any]: {[string]: any}} = {}
-	local connections: {RBXScriptConnection} = {}
+	local changed = Signal.new(settings.defer == true)
+	local state: { [any]: { [string]: any } } = {}
+	local connections: { RBXScriptConnection } = {}
 	local disconnectPacket: (() -> ())? = nil
 	local api = {}
 
 	local function resolveId(target: Instance): number?
-		if idOf then
+		if idOf ~= nil then
 			local value = idOf(target)
 
 			if typeof(value) == "number" then
@@ -87,7 +96,7 @@ function Attributes.track(instance: Instance, schema: {[string]: any}, options: 
 		return defaultIdOf(referenceKind, attributeName, target)
 	end
 
-	local function publish(changes: {[string]: any}, player: Player?): ()
+	local function publish(changes: { [string]: any }, player: Player?): ()
 		local entityId = resolveId(instance)
 
 		if entityId == nil then
@@ -106,15 +115,20 @@ function Attributes.track(instance: Instance, schema: {[string]: any}, options: 
 			if typeof(field) == "string" then
 				local attributeField = field
 
-				connections[#connections + 1] = instance:GetAttributeChangedSignal(attributeField):Connect(function()
-					publish({
-						[attributeField] = instance:GetAttribute(attributeField),
-					})
-				end)
+				connections[#connections + 1] = instance
+					:GetAttributeChangedSignal(attributeField)
+					:Connect(function()
+						publish({
+							[attributeField] = instance:GetAttribute(attributeField),
+						})
+					end)
 			end
 		end
 	else
-		disconnectPacket = packet.onDelta(function(entityId: any, changes: {[string]: any})
+		-- Typed at the assignment: packet is any, so onDelta's return is too, and
+		-- an untyped stop function is something the newer solver will not call
+		-- back at the teardown below.
+		local stop: () -> () = packet.onDelta(function(entityId: any, changes: { [string]: any })
 			local current = state[entityId]
 
 			if not current then
@@ -127,13 +141,15 @@ function Attributes.track(instance: Instance, schema: {[string]: any}, options: 
 			for field, value in changes do
 				current[field] = value
 
-				if options.apply ~= false and target then
+				if settings.apply ~= false and target then
 					target:SetAttribute(field, value)
 				end
 			end
 
 			changed:fire(entityId, changes, target)
 		end)
+
+		disconnectPacket = stop
 	end
 
 	function api.Sync(_self: any, player: Player?): ()
@@ -156,11 +172,14 @@ function Attributes.track(instance: Instance, schema: {[string]: any}, options: 
 		end
 	end
 
-	function api.Get(_self: any, entityId: any): {[string]: any}?
+	function api.Get(_self: any, entityId: any): { [string]: any }?
 		return state[entityId]
 	end
 
-	function api.OnChanged(_self: any, listener: (any, {[string]: any}, Instance?) -> ()): () -> ()
+	function api.OnChanged(
+		_self: any,
+		listener: (any, { [string]: any }, Instance?) -> ()
+	): () -> ()
 		local connection = changed:connect(listener)
 
 		return function()
@@ -175,7 +194,7 @@ function Attributes.track(instance: Instance, schema: {[string]: any}, options: 
 
 		table.clear(connections)
 
-		if disconnectPacket then
+		if disconnectPacket ~= nil then
 			disconnectPacket()
 			disconnectPacket = nil
 		end
