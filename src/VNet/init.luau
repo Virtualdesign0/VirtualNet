@@ -52,7 +52,7 @@ local api = {
 }
 
 return table.freeze(setmetatable(api, {
-	__call = function(_self, schema: {[string]: any}, options: {[string]: any}?)
+	__call = function(_self, schema: { [string]: any }, options: { [string]: any }?)
 		return Network.build(schema, options)
 	end,
 }))
