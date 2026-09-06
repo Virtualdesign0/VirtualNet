@@ -4,7 +4,7 @@ local Players = game:GetService("Players")
 
 local Layer = {}
 
-local layers: {[any]: string} = {}
+local layers: { [any]: string } = {}
 
 local function assertLayer(layer: any): string
 	if typeof(layer) ~= "string" or layer == "" then
@@ -46,9 +46,9 @@ function Layer.same(first: any, second: any): boolean
 	return firstLayer == secondLayer
 end
 
-function Layer.playersFor(target: any, candidates: {Player}?): {Player}
+function Layer.playersFor(target: any, candidates: { Player }?): { Player }
 	local source = candidates or Players:GetPlayers()
-	local result: {Player} = {}
+	local result: { Player } = {}
 	local count = 0
 
 	for _, player in ipairs(source) do
