@@ -12,9 +12,9 @@ export type PackedBatch = {
 type Unit = {
 	size: number?,
 	measure: (value: any) -> number,
-	measureMany: ((values: {any}) -> number)?,
+	measureMany: ((values: { any }) -> number)?,
 	write: (target: buffer, cursor: number, value: any) -> number,
-	writeMany: ((target: buffer, cursor: number, values: {any}) -> number)?,
+	writeMany: ((target: buffer, cursor: number, values: { any }) -> number)?,
 	writePacked: ((batch: PackedBatch, value: any) -> ())?,
 }
 
@@ -67,7 +67,7 @@ function PackedStore.push(batch: PackedBatch, unit: Unit, payload: any): ()
 	batch.count += 1
 end
 
-function PackedStore.pushMany(batch: PackedBatch, unit: Unit, payloads: {any}): ()
+function PackedStore.pushMany(batch: PackedBatch, unit: Unit, payloads: { any }): ()
 	local size = 0
 	local fixedSize = unit.size
 
