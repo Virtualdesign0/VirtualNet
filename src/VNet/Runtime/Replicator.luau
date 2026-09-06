@@ -9,16 +9,16 @@ local Relevance = require(script.Parent.Relevance)
 local Types = require(script.Parent.Parent.Schema.Types)
 
 type EntityState = {
-	state: {[string]: any},
-	dirty: {[string]: any},
-	interest: {[Player]: any},
+	state: { [string]: any },
+	dirty: { [string]: any },
+	interest: { [Player]: any },
 }
 
 local Replicator = {}
 
 local IS_SERVER = RunService:IsServer()
 
-local function assertConfig(config: {[any]: any}): ()
+local function assertConfig(config: { [any]: any }): ()
 	if typeof(config) ~= "table" then
 		error("[VNet]: replicator expects a config table.", 3)
 	end
@@ -28,7 +28,7 @@ local function assertConfig(config: {[any]: any}): ()
 	end
 end
 
-local function copyState(state: {[string]: any}?): {[string]: any}
+local function copyState(state: { [string]: any }?): { [string]: any }
 	local result = {}
 
 	if state then
@@ -40,13 +40,13 @@ local function copyState(state: {[string]: any}?): {[string]: any}
 	return result
 end
 
-local function markAll(dirty: {[string]: any}, state: {[string]: any}): ()
+local function markAll(dirty: { [string]: any }, state: { [string]: any }): ()
 	for key, value in state do
 		dirty[key] = value
 	end
 end
 
-local function dirtyCount(dirty: {[string]: any}): number
+local function dirtyCount(dirty: { [string]: any }): number
 	local count = 0
 
 	for _key in dirty do
@@ -56,11 +56,11 @@ local function dirtyCount(dirty: {[string]: any}): number
 	return count
 end
 
-local function clearDirty(dirty: {[string]: any}): ()
+local function clearDirty(dirty: { [string]: any }): ()
 	table.clear(dirty)
 end
 
-local function interestedPlayers(entityId: any, entry: EntityState): {Player}
+local function interestedPlayers(entityId: any, entry: EntityState): { Player }
 	local explicit = {}
 	local explicitCount = 0
 
@@ -77,7 +77,7 @@ local function interestedPlayers(entityId: any, entry: EntityState): {Player}
 	return Relevance.playersFor(entityId, entry.state, layered)
 end
 
-function Replicator.new(config: {[any]: any}, options: {[any]: any}?)
+function Replicator.new(config: { [any]: any }, options: { [any]: any }?)
 	assertConfig(config)
 
 	local name = config.name or (if options then options.name else nil) or "VNet.Replicator"
@@ -98,7 +98,7 @@ function Replicator.new(config: {[any]: any}, options: {[any]: any}?)
 		immediate = config.immediate or (if options then options.immediate else nil),
 		validate = validateOption,
 	})
-	local entities: {[any]: EntityState} = {}
+	local entities: { [any]: EntityState } = {}
 	local api = {}
 
 	local function ensureEntity(entityId: any): EntityState
@@ -108,19 +108,23 @@ function Replicator.new(config: {[any]: any}, options: {[any]: any}?)
 			return entry
 		end
 
-		entry = {
+		-- Built into its own local rather than assigned back over the nullable
+		-- lookup above: the analyser does not carry the narrowing onto a name it
+		-- has already seen as possibly nil.
+		local created: EntityState = {
 			state = {},
 			dirty = {},
 			interest = setmetatable({}, {
 				__mode = "k",
 			}) :: any,
 		}
-		entities[entityId] = entry
 
-		return entry
+		entities[entityId] = created
+
+		return created
 	end
 
-	local function sendChanges(entityId: any, changes: {[string]: any}): ()
+	local function sendChanges(entityId: any, changes: { [string]: any }): ()
 		if IS_SERVER then
 			local players = interestedPlayers(entityId, ensureEntity(entityId))
 
@@ -132,7 +136,7 @@ function Replicator.new(config: {[any]: any}, options: {[any]: any}?)
 		end
 	end
 
-	function api.Track(_self: any, entityId: any, state: {[string]: any}?)
+	function api.Track(_self: any, entityId: any, state: { [string]: any }?)
 		local entry = ensureEntity(entityId)
 
 		entry.state = copyState(state)
@@ -145,7 +149,7 @@ function Replicator.new(config: {[any]: any}, options: {[any]: any}?)
 			api:Set(entityId, field, value)
 		end
 
-		function replica.Patch(_replicaSelf: any, patch: {[string]: any}): ()
+		function replica.Patch(_replicaSelf: any, patch: { [string]: any }): ()
 			api:Set(entityId, patch)
 		end
 
@@ -190,14 +194,23 @@ function Replicator.new(config: {[any]: any}, options: {[any]: any}?)
 		entry.dirty[field] = value
 	end
 
-	function api.Get(_self: any, entityId: any): {[string]: any}?
+	function api.Get(_self: any, entityId: any): { [string]: any }?
 		local entry = entities[entityId]
 
 		return if entry then entry.state else nil
 	end
 
 	function api.SetInterest(_self: any, player: Player, entityId: any, interest: any): ()
-		if typeof(player) ~= "Instance" or not player:IsA("Player") then
+		-- Cast after the typeof check rather than narrowed by it: the newer solver
+		-- does not carry a typeof narrowing onto an any, so IsA would read as
+		-- uncallable. The check above is what makes the cast true.
+		if typeof(player) ~= "Instance" then
+			error("[VNet]: Replicator:SetInterest expects a Player.", 2)
+		end
+
+		local playerInstance = player :: Instance
+
+		if not playerInstance:IsA("Player") then
 			error("[VNet]: Replicator:SetInterest expects a Player.", 2)
 		end
 
