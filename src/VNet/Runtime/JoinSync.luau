@@ -13,9 +13,9 @@ type PipelineOptions = {
 local JoinSync = {}
 
 local IS_SERVER = RunService:IsServer()
-local pipelines: {[string]: any} = {}
-local receivers: {[string]: (any) -> ()} = {}
-local pending: {[string]: {any}} = {}
+local pipelines: { [string]: any } = {}
+local receivers: { [string]: (any) -> () } = {}
+local pending: { [string]: { any } } = {}
 
 local function assertPipelineName(name: any): string
 	if typeof(name) ~= "string" or name == "" then
@@ -25,13 +25,13 @@ local function assertPipelineName(name: any): string
 	return name
 end
 
-local function normalizeStages(stages: {any}): ({string}, {[string]: boolean})
+local function normalizeStages(stages: { any }): ({ string }, { [string]: boolean })
 	if typeof(stages) ~= "table" then
 		error("[VNet]: JoinSync.define expects an array of stage names.", 3)
 	end
 
-	local order: {string} = {}
-	local seen: {[string]: boolean} = {}
+	local order: { string } = {}
+	local seen: { [string]: boolean } = {}
 
 	for index = 1, #stages do
 		local stage = stages[index]
@@ -55,12 +55,21 @@ local function normalizeStages(stages: {any}): ({string}, {[string]: boolean})
 	return order, seen
 end
 
-local function defaultName(stages: {string}): string
+local function defaultName(stages: { string }): string
 	return table.concat(stages, "|")
 end
 
 local function assertPlayer(player: any): Player
-	if typeof(player) ~= "Instance" or not player:IsA("Player") then
+	-- Cast after the typeof check rather than narrowed by it: the newer solver
+	-- does not carry a typeof narrowing onto an any, so IsA would read as
+	-- uncallable. The check above is what makes the cast true.
+	if typeof(player) ~= "Instance" then
+		error("[VNet]: JoinSync.start expects a Player.", 3)
+	end
+
+	local playerInstance = player :: Instance
+
+	if not playerInstance:IsA("Player") then
 		error("[VNet]: JoinSync.start expects a Player.", 3)
 	end
 
@@ -93,9 +102,10 @@ local function stageHandler(handlers: any, stage: string): ((Player, string) -> 
 	error("[VNet]: JoinSync.start expects a handler function or table.", 3)
 end
 
-function JoinSync.define(stages: {any}, options: PipelineOptions?)
+function JoinSync.define(stages: { any }, options: PipelineOptions?)
 	local order, stageSet = normalizeStages(stages)
-	local name = assertPipelineName(if options and options.name then options.name else defaultName(order))
+	local name =
+		assertPipelineName(if options and options.name then options.name else defaultName(order))
 	local existing = pipelines[name]
 
 	if existing then
@@ -105,7 +115,7 @@ function JoinSync.define(stages: {any}, options: PipelineOptions?)
 	local defer = options ~= nil and options.defer == true
 	local stageSignal = Signal.new(defer)
 	local doneSignal = Signal.new(defer)
-	local completed: {[string]: boolean} = {}
+	local completed: { [string]: boolean } = {}
 	local done = false
 
 	local pipeline: any = {
