@@ -11,14 +11,14 @@ local CodecState: any = {
 type Guard = {
 	kind: string,
 	check: ((value: any) -> boolean)?,
-	shape: {[string]: Guard}?,
-	order: {string}?,
+	shape: { [string]: Guard }?,
+	order: { string }?,
 	item: Guard?,
-	items: {Guard}?,
+	items: { Guard }?,
 	key: Guard?,
 	value: Guard?,
-	values: {any}?,
-	lookup: {[any]: number}?,
+	values: { any }?,
+	lookup: { [any]: number }?,
 	minLength: number?,
 	maxLength: number?,
 	scale: number?,
@@ -28,17 +28,23 @@ type Guard = {
 type Unit = {
 	size: number?,
 	measure: (value: any) -> number,
-	measureMany: ((values: {any}) -> number)?,
+	measureMany: ((values: { any }) -> number)?,
 	write: (target: buffer, cursor: number, value: any) -> number,
-	writeMany: ((target: buffer, cursor: number, values: {any}) -> number)?,
+	writeMany: ((target: buffer, cursor: number, values: { any }) -> number)?,
 	writePacked: ((batch: any, value: any) -> ())?,
 	read: (source: buffer, cursor: number) -> (any, number),
 	stream: ((source: buffer, cursor: number, count: number, callback: (any) -> ()) -> number)?,
-	streamSender: ((source: buffer, cursor: number, count: number, sender: Player, callback: (Player, any) -> ()) -> number)?,
+	streamSender: ((
+		source: buffer,
+		cursor: number,
+		count: number,
+		sender: Player,
+		callback: (Player, any) -> ()
+	) -> number)?,
 }
 
 local NIL_UNIT: any = {}
-local compiledCache: {[Guard]: any} = setmetatable({}, { __mode = "k" }) :: any
+local compiledCache: { [Guard]: any } = setmetatable({}, { __mode = "k" }) :: any
 
 local TRUE_VALUE = true
 local FALSE_VALUE = false
@@ -182,7 +188,13 @@ local function lengthCodec(maxLength: number?): (number, any, any)
 	return 4, writeU32, readU32
 end
 
-local function checkWriteLength(size: number, minLength: number?, maxLength: number?, limit: number, label: string): ()
+local function checkWriteLength(
+	size: number,
+	minLength: number?,
+	maxLength: number?,
+	limit: number,
+	label: string
+): ()
 	if minLength and size < minLength then
 		error("[VNet]: " .. label .. " length below min.", 3)
 	end
@@ -196,7 +208,13 @@ local function checkWriteLength(size: number, minLength: number?, maxLength: num
 	end
 end
 
-local function checkReadLength(size: number, minLength: number?, maxLength: number?, limit: number, label: string): ()
+local function checkReadLength(
+	size: number,
+	minLength: number?,
+	maxLength: number?,
+	limit: number,
+	label: string
+): ()
 	if minLength and size < minLength then
 		failDecode(label .. " length below min")
 	end
@@ -210,15 +228,15 @@ local function checkReadLength(size: number, minLength: number?, maxLength: numb
 	end
 end
 
-local function readOrderName(names: {string}, index: number): string
+local function readOrderName(names: { string }, index: number): string
 	return getField(names, index) :: string
 end
 
-local function orderCount(names: {string}): number
+local function orderCount(names: { string }): number
 	return #names
 end
 
-local function readShapeGuard(guards: {[string]: Guard}, name: string): Guard
+local function readShapeGuard(guards: { [string]: Guard }, name: string): Guard
 	return getField(guards, name) :: Guard
 end
 
@@ -226,11 +244,11 @@ local function readGuardItem(schema: Guard): Guard?
 	return getField(schema :: any, "item") :: Guard?
 end
 
-local function readGuardItems(schema: Guard): {Guard}?
-	return getField(schema :: any, "items") :: {Guard}?
+local function readGuardItems(schema: Guard): { Guard }?
+	return getField(schema :: any, "items") :: { Guard }?
 end
 
-local function packedCount(values: {any}): number
+local function packedCount(values: { any }): number
 	local packedValues = values :: any
 	local count = packedValues.n
 
@@ -257,20 +275,20 @@ local function readGuardRefKind(schema: Guard): string?
 	return getField(schema :: any, "refKind") :: string?
 end
 
-local function readGuardValues(schema: Guard): {any}?
-	return getField(schema :: any, "values") :: {any}?
+local function readGuardValues(schema: Guard): { any }?
+	return getField(schema :: any, "values") :: { any }?
 end
 
-local function readGuardLookup(schema: Guard): {[any]: number}?
-	return getField(schema :: any, "lookup") :: {[any]: number}?
+local function readGuardLookup(schema: Guard): { [any]: number }?
+	return getField(schema :: any, "lookup") :: { [any]: number }?
 end
 
-local function readGuardShape(schema: Guard): {[string]: Guard}?
-	return getField(schema :: any, "shape") :: {[string]: Guard}?
+local function readGuardShape(schema: Guard): { [string]: Guard }?
+	return getField(schema :: any, "shape") :: { [string]: Guard }?
 end
 
-local function readGuardOrder(schema: Guard): {string}?
-	return getField(schema :: any, "order") :: {string}?
+local function readGuardOrder(schema: Guard): { string }?
+	return getField(schema :: any, "order") :: { string }?
 end
 
 local function readGuardKey(schema: Guard): Guard?
@@ -285,7 +303,7 @@ local function readGuardCheck(schema: Guard): ((value: any) -> boolean)?
 	return getField(schema :: any, "check") :: ((value: any) -> boolean)?
 end
 
-local function readFieldUnit(fieldUnits: {Unit}, index: number): Unit?
+local function readFieldUnit(fieldUnits: { Unit }, index: number): Unit?
 	return getField(fieldUnits, index) :: Unit?
 end
 
@@ -345,7 +363,13 @@ local function readI24Value(source: buffer, cursor: number): number
 	return value
 end
 
-local function encodeFloatBits(value: number, mantissaSteps: number, exponentBias: number, exponentMax: number, maxFinite: number): number
+local function encodeFloatBits(
+	value: number,
+	mantissaSteps: number,
+	exponentBias: number,
+	exponentMax: number,
+	maxFinite: number
+): number
 	local signBit = mantissaSteps * (exponentMax + 1)
 
 	if value == 0 then
@@ -378,12 +402,18 @@ local function encodeFloatBits(value: number, mantissaSteps: number, exponentBia
 		return sign * signBit + exponentMax * mantissaSteps
 	end
 
-	local mantissaBits = clamp(floor((mantissa * 2 - 1) * mantissaSteps + 0.5), 0, mantissaSteps - 1)
+	local mantissaBits =
+		clamp(floor((mantissa * 2 - 1) * mantissaSteps + 0.5), 0, mantissaSteps - 1)
 
 	return sign * signBit + biasedExponent * mantissaSteps + mantissaBits
 end
 
-local function decodeFloatBits(bits: number, mantissaSteps: number, exponentBias: number, exponentMax: number): number
+local function decodeFloatBits(
+	bits: number,
+	mantissaSteps: number,
+	exponentBias: number,
+	exponentMax: number
+): number
 	local mantissa = bits % mantissaSteps
 	local exponent = floor(bits / mantissaSteps) % (exponentMax + 1)
 	local sign = floor(bits / (mantissaSteps * (exponentMax + 1)))
@@ -418,14 +448,18 @@ local function readF16Value(source: buffer, cursor: number): number
 end
 
 local function writeF24Value(target: buffer, cursor: number, value: number): ()
-	writeU24Value(target, cursor, encodeFloatBits(value, F24_MANTISSA_STEPS, 31, 63, F24_MAX_FINITE))
+	writeU24Value(
+		target,
+		cursor,
+		encodeFloatBits(value, F24_MANTISSA_STEPS, 31, 63, F24_MAX_FINITE)
+	)
 end
 
 local function readF24Value(source: buffer, cursor: number): number
 	return decodeFloatBits(readU24Value(source, cursor), F24_MANTISSA_STEPS, 31, 63)
 end
 
-local function setBooleanField(target: {[any]: any}, key: any, flagByte: number): ()
+local function setBooleanField(target: { [any]: any }, key: any, flagByte: number): ()
 	if flagByte == 0 then
 		setField(target, key, FALSE_VALUE)
 		return
@@ -439,7 +473,11 @@ local function setBooleanField(target: {[any]: any}, key: any, flagByte: number)
 	failDecode("boolean flag invalid")
 end
 
-local function fixed(size: number, writer: (buffer, number, any) -> (), reader: (buffer, number) -> any): Unit
+local function fixed(
+	size: number,
+	writer: (buffer, number, any) -> (),
+	reader: (buffer, number) -> any
+): Unit
 	return {
 		size = size,
 
@@ -447,7 +485,7 @@ local function fixed(size: number, writer: (buffer, number, any) -> (), reader: 
 			return size
 		end,
 
-		measureMany = function(values: {any}): number
+		measureMany = function(values: { any }): number
 			return #values * size
 		end,
 
@@ -456,7 +494,7 @@ local function fixed(size: number, writer: (buffer, number, any) -> (), reader: 
 			return cursor + size
 		end,
 
-		writeMany = function(target: buffer, cursor: number, values: {any}): number
+		writeMany = function(target: buffer, cursor: number, values: { any }): number
 			for index = 1, #values do
 				local value = values[index]
 
@@ -473,7 +511,12 @@ local function fixed(size: number, writer: (buffer, number, any) -> (), reader: 
 			return reader(source, cursor), cursor + size
 		end,
 
-		stream = function(source: buffer, cursor: number, count: number, callback: (any) -> ()): number
+		stream = function(
+			source: buffer,
+			cursor: number,
+			count: number,
+			callback: (any) -> ()
+		): number
 			for _index = 1, count do
 				ensureReadable(source, cursor, size)
 				callback(reader(source, cursor))
@@ -483,7 +526,13 @@ local function fixed(size: number, writer: (buffer, number, any) -> (), reader: 
 			return cursor
 		end,
 
-		streamSender = function(source: buffer, cursor: number, count: number, sender: Player, callback: (Player, any) -> ()): number
+		streamSender = function(
+			source: buffer,
+			cursor: number,
+			count: number,
+			sender: Player,
+			callback: (Player, any) -> ()
+		): number
 			for _index = 1, count do
 				ensureReadable(source, cursor, size)
 				callback(sender, reader(source, cursor))
@@ -556,7 +605,7 @@ local function qvec3I16Unit(scale: number): Unit
 			return 6
 		end,
 
-		measureMany = function(values: {any}): number
+		measureMany = function(values: { any }): number
 			return #values * 6
 		end,
 
@@ -575,7 +624,7 @@ local function qvec3I16Unit(scale: number): Unit
 			return cursor + 6
 		end,
 
-		writeMany = function(target: buffer, cursor: number, values: {any}): number
+		writeMany = function(target: buffer, cursor: number, values: { any }): number
 			for index = 1, #values do
 				local value = values[index]
 				local sx = round(value.X * multiplier)
@@ -625,7 +674,7 @@ local function qtransformYawI16Unit(scale: number): Unit
 			return 7
 		end,
 
-		measureMany = function(values: {any}): number
+		measureMany = function(values: { any }): number
 			return #values * 7
 		end,
 
@@ -649,7 +698,7 @@ local function qtransformYawI16Unit(scale: number): Unit
 			return cursor + 7
 		end,
 
-		writeMany = function(target: buffer, cursor: number, values: {any}): number
+		writeMany = function(target: buffer, cursor: number, values: { any }): number
 			for index = 1, #values do
 				local value = values[index]
 				local position = value.Position
@@ -691,7 +740,7 @@ local function qtransformYawI16Unit(scale: number): Unit
 	}
 end
 
-local units: {[string]: Unit} = {
+local units: { [string]: Unit } = {
 	u8 = fixed(1, writeU8, readU8),
 	uint8 = fixed(1, writeU8, readU8),
 	i8 = fixed(1, writeI8, readI8),
@@ -730,7 +779,7 @@ local noneUnit: Unit = {
 		return 0
 	end,
 
-	measureMany = function(_values: {any}): number
+	measureMany = function(_values: { any }): number
 		return 0
 	end,
 
@@ -742,7 +791,7 @@ local noneUnit: Unit = {
 		return cursor
 	end,
 
-	writeMany = function(_target: buffer, cursor: number, _values: {any}): number
+	writeMany = function(_target: buffer, cursor: number, _values: { any }): number
 		return cursor
 	end,
 
@@ -750,7 +799,12 @@ local noneUnit: Unit = {
 		return nil, cursor
 	end,
 
-	stream = function(_source: buffer, cursor: number, count: number, callback: (any) -> ()): number
+	stream = function(
+		_source: buffer,
+		cursor: number,
+		count: number,
+		callback: (any) -> ()
+	): number
 		for _index = 1, count do
 			(callback :: any)()
 		end
@@ -758,7 +812,13 @@ local noneUnit: Unit = {
 		return cursor
 	end,
 
-	streamSender = function(_source: buffer, cursor: number, count: number, sender: Player, callback: (Player, any) -> ()): number
+	streamSender = function(
+		_source: buffer,
+		cursor: number,
+		count: number,
+		sender: Player,
+		callback: (Player, any) -> ()
+	): number
 		for _index = 1, count do
 			(callback :: any)(sender)
 		end
@@ -795,7 +855,7 @@ local boolUnit: Unit = {
 		return 1
 	end,
 
-	measureMany = function(values: {any}): number
+	measureMany = function(values: { any }): number
 		return #values
 	end,
 
@@ -804,7 +864,7 @@ local boolUnit: Unit = {
 		return cursor + 1
 	end,
 
-	writeMany = function(target: buffer, cursor: number, values: {any}): number
+	writeMany = function(target: buffer, cursor: number, values: { any }): number
 		for index = 1, #values do
 			writeU8(target, cursor, if values[index] then 1 else 0)
 			cursor += 1
@@ -826,7 +886,13 @@ local boolUnit: Unit = {
 		return cursor
 	end,
 
-	streamSender = function(source: buffer, cursor: number, count: number, sender: Player, callback: (Player, any) -> ()): number
+	streamSender = function(
+		source: buffer,
+		cursor: number,
+		count: number,
+		sender: Player,
+		callback: (Player, any) -> ()
+	): number
 		for _index = 1, count do
 			callback(sender, readBoolean(source, cursor))
 			cursor += 1
@@ -843,15 +909,15 @@ units.boolean8 = units.bool
 units.u4 = {
 	size = 1,
 
-	measure = function(_value: {number}): number
+	measure = function(_value: { number }): number
 		return 1
 	end,
 
-	measureMany = function(values: {any}): number
+	measureMany = function(values: { any }): number
 		return #values
 	end,
 
-	write = function(target: buffer, cursor: number, value: {number}): number
+	write = function(target: buffer, cursor: number, value: { number }): number
 		local first = clamp(round(value[1] or 0), 0, 15)
 		local second = clamp(round(value[2] or 0), 0, 15)
 
@@ -860,7 +926,7 @@ units.u4 = {
 		return cursor + 1
 	end,
 
-	writeMany = function(target: buffer, cursor: number, values: {any}): number
+	writeMany = function(target: buffer, cursor: number, values: { any }): number
 		for index = 1, #values do
 			local value = values[index]
 			local first = clamp(round(value[1] or 0), 0, 15)
@@ -885,15 +951,15 @@ units.u4 = {
 units.boolean1 = {
 	size = 1,
 
-	measure = function(_value: {boolean}): number
+	measure = function(_value: { boolean }): number
 		return 1
 	end,
 
-	measureMany = function(values: {any}): number
+	measureMany = function(values: { any }): number
 		return #values
 	end,
 
-	write = function(target: buffer, cursor: number, value: {boolean}): number
+	write = function(target: buffer, cursor: number, value: { boolean }): number
 		local packed = 0
 
 		for index = 1, 8 do
@@ -907,7 +973,7 @@ units.boolean1 = {
 		return cursor + 1
 	end,
 
-	writeMany = function(target: buffer, cursor: number, values: {any}): number
+	writeMany = function(target: buffer, cursor: number, values: { any }): number
 		for valueIndex = 1, #values do
 			local value = values[valueIndex]
 			local packed = 0
@@ -946,7 +1012,7 @@ local u16Unit: Unit = {
 		return 2
 	end,
 
-	measureMany = function(values: {any}): number
+	measureMany = function(values: { any }): number
 		return #values * 2
 	end,
 
@@ -955,7 +1021,7 @@ local u16Unit: Unit = {
 		return cursor + 2
 	end,
 
-	writeMany = function(target: buffer, cursor: number, values: {any}): number
+	writeMany = function(target: buffer, cursor: number, values: { any }): number
 		for index = 1, #values do
 			writeU16(target, cursor, values[index])
 			cursor += 2
@@ -980,7 +1046,13 @@ local u16Unit: Unit = {
 		return cursor
 	end,
 
-	streamSender = function(source: buffer, cursor: number, count: number, sender: Player, callback: (Player, any) -> ()): number
+	streamSender = function(
+		source: buffer,
+		cursor: number,
+		count: number,
+		sender: Player,
+		callback: (Player, any) -> ()
+	): number
 		for _index = 1, count do
 			ensureReadable(source, cursor, 2)
 			callback(sender, readU16(source, cursor))
@@ -1001,7 +1073,7 @@ local u32Unit: Unit = {
 		return 4
 	end,
 
-	measureMany = function(values: {any}): number
+	measureMany = function(values: { any }): number
 		return #values * 4
 	end,
 
@@ -1010,7 +1082,7 @@ local u32Unit: Unit = {
 		return cursor + 4
 	end,
 
-	writeMany = function(target: buffer, cursor: number, values: {any}): number
+	writeMany = function(target: buffer, cursor: number, values: { any }): number
 		for index = 1, #values do
 			local value = values[index]
 
@@ -1037,7 +1109,13 @@ local u32Unit: Unit = {
 		return cursor
 	end,
 
-	streamSender = function(source: buffer, cursor: number, count: number, sender: Player, callback: (Player, any) -> ()): number
+	streamSender = function(
+		source: buffer,
+		cursor: number,
+		count: number,
+		sender: Player,
+		callback: (Player, any) -> ()
+	): number
 		for _index = 1, count do
 			ensureReadable(source, cursor, 4)
 			callback(sender, readU32(source, cursor))
@@ -1065,7 +1143,7 @@ local function readPlayer(source: buffer, cursor: number): (Player, number)
 		failDecode(`unknown player id {userId}`)
 	end
 
-	return player, cursor + 4
+	return player :: Player, cursor + 4
 end
 
 local function readCharacter(source: buffer, cursor: number): (Model, number)
@@ -1089,7 +1167,7 @@ local playerUnit: Unit = {
 		return 4
 	end,
 
-	measureMany = function(values: {any}): number
+	measureMany = function(values: { any }): number
 		return #values * 4
 	end,
 
@@ -1098,7 +1176,7 @@ local playerUnit: Unit = {
 		return cursor + 4
 	end,
 
-	writeMany = function(target: buffer, cursor: number, values: {any}): number
+	writeMany = function(target: buffer, cursor: number, values: { any }): number
 		for index = 1, #values do
 			writeU32(target, cursor, values[index].UserId)
 			cursor += 4
@@ -1122,7 +1200,13 @@ local playerUnit: Unit = {
 		return cursor
 	end,
 
-	streamSender = function(source: buffer, cursor: number, count: number, sender: Player, callback: (Player, any) -> ()): number
+	streamSender = function(
+		source: buffer,
+		cursor: number,
+		count: number,
+		sender: Player,
+		callback: (Player, any) -> ()
+	): number
 		for _index = 1, count do
 			local player
 
@@ -1141,7 +1225,7 @@ local characterUnit: Unit = {
 		return 4
 	end,
 
-	measureMany = function(values: {any}): number
+	measureMany = function(values: { any }): number
 		return #values * 4
 	end,
 
@@ -1156,7 +1240,7 @@ local characterUnit: Unit = {
 		return cursor + 4
 	end,
 
-	writeMany = function(target: buffer, cursor: number, values: {any}): number
+	writeMany = function(target: buffer, cursor: number, values: { any }): number
 		for index = 1, #values do
 			local player = Players:GetPlayerFromCharacter(values[index])
 
@@ -1186,7 +1270,13 @@ local characterUnit: Unit = {
 		return cursor
 	end,
 
-	streamSender = function(source: buffer, cursor: number, count: number, sender: Player, callback: (Player, any) -> ()): number
+	streamSender = function(
+		source: buffer,
+		cursor: number,
+		count: number,
+		sender: Player,
+		callback: (Player, any) -> ()
+	): number
 		for _index = 1, count do
 			local character
 
@@ -1202,11 +1292,11 @@ units.player = playerUnit
 units.character = characterUnit
 
 local u32ArrayUnit: Unit = {
-	measure = function(value: {any}): number
+	measure = function(value: { any }): number
 		return 4 + #value * 4
 	end,
 
-	measureMany = function(values: {any}): number
+	measureMany = function(values: { any }): number
 		local size = 0
 
 		for index = 1, #values do
@@ -1218,7 +1308,7 @@ local u32ArrayUnit: Unit = {
 		return size
 	end,
 
-	write = function(target: buffer, cursor: number, value: {any}): number
+	write = function(target: buffer, cursor: number, value: { any }): number
 		writeU32(target, cursor, #value)
 		cursor += 4
 
@@ -1230,7 +1320,7 @@ local u32ArrayUnit: Unit = {
 		return cursor
 	end,
 
-	writeMany = function(target: buffer, cursor: number, values: {any}): number
+	writeMany = function(target: buffer, cursor: number, values: { any }): number
 		for valueIndex = 1, #values do
 			local value = values[valueIndex]
 
@@ -1275,7 +1365,7 @@ local function stringUnit(minLength: number?, maxLength: number?): Unit
 			return lengthSize + size
 		end,
 
-		measureMany = function(values: {any}): number
+		measureMany = function(values: { any }): number
 			local size = 0
 
 			for index = 1, #values do
@@ -1300,7 +1390,7 @@ local function stringUnit(minLength: number?, maxLength: number?): Unit
 			return textCursor + size
 		end,
 
-		writeMany = function(target: buffer, cursor: number, values: {any}): number
+		writeMany = function(target: buffer, cursor: number, values: { any }): number
 			for index = 1, #values do
 				local value = values[index]
 				local size = #value
@@ -1342,7 +1432,7 @@ local function bufferUnit(minLength: number?, maxLength: number?): Unit
 			return lengthSize + size
 		end,
 
-		measureMany = function(values: {any}): number
+		measureMany = function(values: { any }): number
 			local size = 0
 
 			for index = 1, #values do
@@ -1367,7 +1457,7 @@ local function bufferUnit(minLength: number?, maxLength: number?): Unit
 			return dataCursor + size
 		end,
 
-		writeMany = function(target: buffer, cursor: number, values: {any}): number
+		writeMany = function(target: buffer, cursor: number, values: { any }): number
 			for index = 1, #values do
 				local value = values[index]
 				local size = lenBuffer(value)
@@ -1406,7 +1496,7 @@ units.buffer = bufferUnit(nil, nil)
 units.buff = units.buffer
 
 local stringArrayUnit: Unit = {
-	measure = function(value: {any}): number
+	measure = function(value: { any }): number
 		local size = 4
 
 		for index = 1, #value do
@@ -1418,7 +1508,7 @@ local stringArrayUnit: Unit = {
 		return size
 	end,
 
-	measureMany = function(values: {any}): number
+	measureMany = function(values: { any }): number
 		local size = 0
 
 		for valueIndex = 1, #values do
@@ -1436,7 +1526,7 @@ local stringArrayUnit: Unit = {
 		return size
 	end,
 
-	write = function(target: buffer, cursor: number, value: {any}): number
+	write = function(target: buffer, cursor: number, value: { any }): number
 		writeU32(target, cursor, #value)
 		cursor += 4
 
@@ -1452,7 +1542,7 @@ local stringArrayUnit: Unit = {
 		return cursor
 	end,
 
-	writeMany = function(target: buffer, cursor: number, values: {any}): number
+	writeMany = function(target: buffer, cursor: number, values: { any }): number
 		for valueIndex = 1, #values do
 			local value = values[valueIndex]
 
@@ -1496,7 +1586,7 @@ units.vec2 = {
 		return 8
 	end,
 
-	measureMany = function(values: {any}): number
+	measureMany = function(values: { any }): number
 		return #values * 8
 	end,
 
@@ -1507,7 +1597,7 @@ units.vec2 = {
 		return cursor + 8
 	end,
 
-	writeMany = function(target: buffer, cursor: number, values: {any}): number
+	writeMany = function(target: buffer, cursor: number, values: { any }): number
 		for index = 1, #values do
 			local value = values[index]
 
@@ -1538,7 +1628,7 @@ units.vector2s16 = {
 		return 4
 	end,
 
-	measureMany = function(values: {any}): number
+	measureMany = function(values: { any }): number
 		return #values * 4
 	end,
 
@@ -1549,7 +1639,7 @@ units.vector2s16 = {
 		return cursor + 4
 	end,
 
-	writeMany = function(target: buffer, cursor: number, values: {any}): number
+	writeMany = function(target: buffer, cursor: number, values: { any }): number
 		for index = 1, #values do
 			local value = values[index]
 
@@ -1578,7 +1668,7 @@ units.vector2f24 = {
 		return 6
 	end,
 
-	measureMany = function(values: {any}): number
+	measureMany = function(values: { any }): number
 		return #values * 6
 	end,
 
@@ -1589,7 +1679,7 @@ units.vector2f24 = {
 		return cursor + 6
 	end,
 
-	writeMany = function(target: buffer, cursor: number, values: {any}): number
+	writeMany = function(target: buffer, cursor: number, values: { any }): number
 		for index = 1, #values do
 			local value = values[index]
 
@@ -1618,7 +1708,7 @@ units.vec3 = {
 		return 12
 	end,
 
-	measureMany = function(values: {any}): number
+	measureMany = function(values: { any }): number
 		return #values * 12
 	end,
 
@@ -1630,7 +1720,7 @@ units.vec3 = {
 		return cursor + 12
 	end,
 
-	writeMany = function(target: buffer, cursor: number, values: {any}): number
+	writeMany = function(target: buffer, cursor: number, values: { any }): number
 		for index = 1, #values do
 			local value = values[index]
 
@@ -1649,11 +1739,7 @@ units.vec3 = {
 		local x = readF32(source, cursor)
 		local y = readF32(source, cursor + 4)
 		local z = readF32(source, cursor + 8)
-		local vector = makeVector3(
-			x,
-			y,
-			z
-		)
+		local vector = makeVector3(x, y, z)
 
 		return vector, cursor + 12
 	end,
@@ -1670,7 +1756,7 @@ units.vector3f24 = {
 		return 9
 	end,
 
-	measureMany = function(values: {any}): number
+	measureMany = function(values: { any }): number
 		return #values * 9
 	end,
 
@@ -1682,7 +1768,7 @@ units.vector3f24 = {
 		return cursor + 9
 	end,
 
-	writeMany = function(target: buffer, cursor: number, values: {any}): number
+	writeMany = function(target: buffer, cursor: number, values: { any }): number
 		for index = 1, #values do
 			local value = values[index]
 
@@ -1714,7 +1800,7 @@ units.qnormal_i16 = {
 		return 6
 	end,
 
-	measureMany = function(values: {any}): number
+	measureMany = function(values: { any }): number
 		return #values * 6
 	end,
 
@@ -1730,7 +1816,7 @@ units.qnormal_i16 = {
 		return cursor + 6
 	end,
 
-	writeMany = function(target: buffer, cursor: number, values: {any}): number
+	writeMany = function(target: buffer, cursor: number, values: { any }): number
 		for index = 1, #values do
 			local value = values[index]
 			local qx = quantizeUnitI16(value.X)
@@ -1768,7 +1854,7 @@ units.qyaw_u8 = {
 		return 1
 	end,
 
-	measureMany = function(values: {any}): number
+	measureMany = function(values: { any }): number
 		return #values
 	end,
 
@@ -1780,7 +1866,7 @@ units.qyaw_u8 = {
 		return cursor + 1
 	end,
 
-	writeMany = function(target: buffer, cursor: number, values: {any}): number
+	writeMany = function(target: buffer, cursor: number, values: { any }): number
 		for index = 1, #values do
 			local yaw = quantizeAngleU8(values[index])
 
@@ -1808,7 +1894,7 @@ units.qangle_u16 = {
 		return 2
 	end,
 
-	measureMany = function(values: {any}): number
+	measureMany = function(values: { any }): number
 		return #values * 2
 	end,
 
@@ -1820,7 +1906,7 @@ units.qangle_u16 = {
 		return cursor + 2
 	end,
 
-	writeMany = function(target: buffer, cursor: number, values: {any}): number
+	writeMany = function(target: buffer, cursor: number, values: { any }): number
 		for index = 1, #values do
 			local angle = quantizeAngleU16(values[index])
 
@@ -1848,7 +1934,7 @@ units.qalpha_u8 = {
 		return 1
 	end,
 
-	measureMany = function(values: {any}): number
+	measureMany = function(values: { any }): number
 		return #values
 	end,
 
@@ -1860,7 +1946,7 @@ units.qalpha_u8 = {
 		return cursor + 1
 	end,
 
-	writeMany = function(target: buffer, cursor: number, values: {any}): number
+	writeMany = function(target: buffer, cursor: number, values: { any }): number
 		for index = 1, #values do
 			local alpha = quantizeUnitU8(values[index])
 
@@ -1888,7 +1974,7 @@ units.cframe = {
 		return 48
 	end,
 
-	measureMany = function(values: {any}): number
+	measureMany = function(values: { any }): number
 		return #values * 48
 	end,
 
@@ -1911,7 +1997,7 @@ units.cframe = {
 		return cursor + 48
 	end,
 
-	writeMany = function(target: buffer, cursor: number, values: {any}): number
+	writeMany = function(target: buffer, cursor: number, values: { any }): number
 		for index = 1, #values do
 			local value = values[index]
 			local x, y, z, r00, r01, r02, r10, r11, r12, r20, r21, r22 = value:GetComponents()
@@ -1949,20 +2035,7 @@ units.cframe = {
 		local r20 = readF32(source, cursor + 36)
 		local r21 = readF32(source, cursor + 40)
 		local r22 = readF32(source, cursor + 44)
-		local frame = makeCFrame(
-			x,
-			y,
-			z,
-			r00,
-			r01,
-			r02,
-			r10,
-			r11,
-			r12,
-			r20,
-			r21,
-			r22
-		)
+		local frame = makeCFrame(x, y, z, r00, r01, r02, r10, r11, r12, r20, r21, r22)
 
 		return frame, cursor + 48
 	end,
@@ -1975,7 +2048,7 @@ units.cframef24u8 = {
 		return 12
 	end,
 
-	measureMany = function(values: {any}): number
+	measureMany = function(values: { any }): number
 		return #values * 12
 	end,
 
@@ -1992,7 +2065,7 @@ units.cframef24u8 = {
 		return cursor + 12
 	end,
 
-	writeMany = function(target: buffer, cursor: number, values: {any}): number
+	writeMany = function(target: buffer, cursor: number, values: { any }): number
 		for index = 1, #values do
 			local value = values[index]
 			local rx, ry, rz = value:ToEulerAnglesXYZ()
@@ -2031,7 +2104,7 @@ units.numberrange = {
 		return 8
 	end,
 
-	measureMany = function(values: {any}): number
+	measureMany = function(values: { any }): number
 		return #values * 8
 	end,
 
@@ -2042,7 +2115,7 @@ units.numberrange = {
 		return cursor + 8
 	end,
 
-	writeMany = function(target: buffer, cursor: number, values: {any}): number
+	writeMany = function(target: buffer, cursor: number, values: { any }): number
 		for index = 1, #values do
 			local value = values[index]
 
@@ -2072,7 +2145,7 @@ units.color3 = {
 		return 3
 	end,
 
-	measureMany = function(values: {any}): number
+	measureMany = function(values: { any }): number
 		return #values * 3
 	end,
 
@@ -2084,7 +2157,7 @@ units.color3 = {
 		return cursor + 3
 	end,
 
-	writeMany = function(target: buffer, cursor: number, values: {any}): number
+	writeMany = function(target: buffer, cursor: number, values: { any }): number
 		for index = 1, #values do
 			local value = values[index]
 
@@ -2118,7 +2191,7 @@ units.colorsequence = {
 		return 1 + length * 7
 	end,
 
-	measureMany = function(values: {any}): number
+	measureMany = function(values: { any }): number
 		local size = 0
 
 		for index = 1, #values do
@@ -2153,7 +2226,7 @@ units.colorsequence = {
 		return cursor
 	end,
 
-	writeMany = function(target: buffer, cursor: number, values: {any}): number
+	writeMany = function(target: buffer, cursor: number, values: { any }): number
 		for valueIndex = 1, #values do
 			cursor = units.colorsequence.write(target, cursor, values[valueIndex])
 		end
@@ -2165,7 +2238,7 @@ units.colorsequence = {
 		ensureReadable(source, cursor, 1)
 
 		local length = readU8(source, cursor)
-		local keypoints: {ColorSequenceKeypoint} = createArray(length)
+		local keypoints: { ColorSequenceKeypoint } = createArray(length)
 		cursor += 1
 
 		for index = 1, length do
@@ -2195,7 +2268,7 @@ units.region3 = {
 		return 24
 	end,
 
-	measureMany = function(values: {any}): number
+	measureMany = function(values: { any }): number
 		return #values * 24
 	end,
 
@@ -2214,7 +2287,7 @@ units.region3 = {
 		return cursor + 24
 	end,
 
-	writeMany = function(target: buffer, cursor: number, values: {any}): number
+	writeMany = function(target: buffer, cursor: number, values: { any }): number
 		for index = 1, #values do
 			cursor = units.region3.write(target, cursor, values[index])
 		end
@@ -2246,7 +2319,7 @@ units.rect = {
 		return 16
 	end,
 
-	measureMany = function(values: {any}): number
+	measureMany = function(values: { any }): number
 		return #values * 16
 	end,
 
@@ -2259,7 +2332,7 @@ units.rect = {
 		return cursor + 16
 	end,
 
-	writeMany = function(target: buffer, cursor: number, values: {any}): number
+	writeMany = function(target: buffer, cursor: number, values: { any }): number
 		for index = 1, #values do
 			cursor = units.rect.write(target, cursor, values[index])
 		end
@@ -2287,7 +2360,7 @@ units.brickcolor = {
 		return 2
 	end,
 
-	measureMany = function(values: {any}): number
+	measureMany = function(values: { any }): number
 		return #values * 2
 	end,
 
@@ -2297,7 +2370,7 @@ units.brickcolor = {
 		return cursor + 2
 	end,
 
-	writeMany = function(target: buffer, cursor: number, values: {any}): number
+	writeMany = function(target: buffer, cursor: number, values: { any }): number
 		for index = 1, #values do
 			writeU16(target, cursor, values[index].Number)
 			cursor += 2
@@ -2324,7 +2397,7 @@ units.udim = {
 		return 8
 	end,
 
-	measureMany = function(values: {any}): number
+	measureMany = function(values: { any }): number
 		return #values * 8
 	end,
 
@@ -2335,7 +2408,7 @@ units.udim = {
 		return cursor + 8
 	end,
 
-	writeMany = function(target: buffer, cursor: number, values: {any}): number
+	writeMany = function(target: buffer, cursor: number, values: { any }): number
 		for index = 1, #values do
 			local value = values[index]
 
@@ -2365,7 +2438,7 @@ units.udim2 = {
 		return 16
 	end,
 
-	measureMany = function(values: {any}): number
+	measureMany = function(values: { any }): number
 		return #values * 16
 	end,
 
@@ -2378,7 +2451,7 @@ units.udim2 = {
 		return cursor + 16
 	end,
 
-	writeMany = function(target: buffer, cursor: number, values: {any}): number
+	writeMany = function(target: buffer, cursor: number, values: { any }): number
 		for index = 1, #values do
 			local value = values[index]
 
@@ -2414,7 +2487,7 @@ units.numbersequence = {
 		return 1 + length * 12
 	end,
 
-	measureMany = function(values: {any}): number
+	measureMany = function(values: { any }): number
 		local size = 0
 
 		for index = 1, #values do
@@ -2447,7 +2520,7 @@ units.numbersequence = {
 		return cursor
 	end,
 
-	writeMany = function(target: buffer, cursor: number, values: {any}): number
+	writeMany = function(target: buffer, cursor: number, values: { any }): number
 		for valueIndex = 1, #values do
 			cursor = units.numbersequence.write(target, cursor, values[valueIndex])
 		end
@@ -2459,7 +2532,7 @@ units.numbersequence = {
 		ensureReadable(source, cursor, 1)
 
 		local length = readU8(source, cursor)
-		local keypoints: {NumberSequenceKeypoint} = createArray(length)
+		local keypoints: { NumberSequenceKeypoint } = createArray(length)
 		cursor += 1
 
 		for index = 1, length do
@@ -2482,11 +2555,21 @@ units.numbersequence = {
 
 -- These object writers are intentionally specialized.
 -- They avoid generic field loops for common packet shapes used in hot network paths.
-local function object2Unit(objectSize: number?, n1: string, n2: string, m1: any, m2: any, w1: any, w2: any, r1: any, r2: any): Unit
+local function object2Unit(
+	objectSize: number?,
+	n1: string,
+	n2: string,
+	m1: any,
+	m2: any,
+	w1: any,
+	w2: any,
+	r1: any,
+	r2: any
+): Unit
 	return {
 		size = objectSize,
 
-		measure = function(value: {[string]: any}): number
+		measure = function(value: { [string]: any }): number
 			if objectSize then
 				return objectSize
 			end
@@ -2494,7 +2577,7 @@ local function object2Unit(objectSize: number?, n1: string, n2: string, m1: any,
 			return m1(value[n1]) + m2(value[n2])
 		end,
 
-		measureMany = function(values: {any}): number
+		measureMany = function(values: { any }): number
 			if objectSize then
 				return #values * objectSize
 			end
@@ -2510,14 +2593,14 @@ local function object2Unit(objectSize: number?, n1: string, n2: string, m1: any,
 			return size
 		end,
 
-		write = function(target: buffer, cursor: number, value: {[string]: any}): number
+		write = function(target: buffer, cursor: number, value: { [string]: any }): number
 			cursor = w1(target, cursor, value[n1])
 			cursor = w2(target, cursor, value[n2])
 
 			return cursor
 		end,
 
-		writeMany = function(target: buffer, cursor: number, values: {any}): number
+		writeMany = function(target: buffer, cursor: number, values: { any }): number
 			for index = 1, #values do
 				local value = values[index]
 
@@ -2544,11 +2627,11 @@ end
 
 local function objectStringBoolUnit(n1: string, n2: string): Unit
 	return {
-		measure = function(value: {[string]: any}): number
+		measure = function(value: { [string]: any }): number
 			return 5 + #value[n1]
 		end,
 
-		measureMany = function(values: {any}): number
+		measureMany = function(values: { any }): number
 			local size = 0
 
 			for index = 1, #values do
@@ -2560,7 +2643,7 @@ local function objectStringBoolUnit(n1: string, n2: string): Unit
 			return size
 		end,
 
-		write = function(target: buffer, cursor: number, value: {[string]: any}): number
+		write = function(target: buffer, cursor: number, value: { [string]: any }): number
 			local text = value[n1]
 			local size = #text
 
@@ -2571,7 +2654,7 @@ local function objectStringBoolUnit(n1: string, n2: string): Unit
 			return cursor + 5 + size
 		end,
 
-		writeMany = function(target: buffer, cursor: number, values: {any}): number
+		writeMany = function(target: buffer, cursor: number, values: { any }): number
 			for index = 1, #values do
 				local value = values[index]
 				local text = value[n1]
@@ -2605,11 +2688,25 @@ local function objectStringBoolUnit(n1: string, n2: string): Unit
 	}
 end
 
-local function object3Unit(objectSize: number?, n1: string, n2: string, n3: string, m1: any, m2: any, m3: any, w1: any, w2: any, w3: any, r1: any, r2: any, r3: any): Unit
+local function object3Unit(
+	objectSize: number?,
+	n1: string,
+	n2: string,
+	n3: string,
+	m1: any,
+	m2: any,
+	m3: any,
+	w1: any,
+	w2: any,
+	w3: any,
+	r1: any,
+	r2: any,
+	r3: any
+): Unit
 	return {
 		size = objectSize,
 
-		measure = function(value: {[string]: any}): number
+		measure = function(value: { [string]: any }): number
 			if objectSize then
 				return objectSize
 			end
@@ -2617,7 +2714,7 @@ local function object3Unit(objectSize: number?, n1: string, n2: string, n3: stri
 			return m1(value[n1]) + m2(value[n2]) + m3(value[n3])
 		end,
 
-		measureMany = function(values: {any}): number
+		measureMany = function(values: { any }): number
 			if objectSize then
 				return #values * objectSize
 			end
@@ -2633,7 +2730,7 @@ local function object3Unit(objectSize: number?, n1: string, n2: string, n3: stri
 			return size
 		end,
 
-		write = function(target: buffer, cursor: number, value: {[string]: any}): number
+		write = function(target: buffer, cursor: number, value: { [string]: any }): number
 			cursor = w1(target, cursor, value[n1])
 			cursor = w2(target, cursor, value[n2])
 			cursor = w3(target, cursor, value[n3])
@@ -2641,7 +2738,7 @@ local function object3Unit(objectSize: number?, n1: string, n2: string, n3: stri
 			return cursor
 		end,
 
-		writeMany = function(target: buffer, cursor: number, values: {any}): number
+		writeMany = function(target: buffer, cursor: number, values: { any }): number
 			for index = 1, #values do
 				local value = values[index]
 
@@ -2670,16 +2767,16 @@ local function object3Unit(objectSize: number?, n1: string, n2: string, n3: stri
 end
 
 local function objectStringBoolU32Unit(n1: string, n2: string, n3: string): Unit
-	local function writeNumberField(target: buffer, cursor: number, owner: {[string]: any}): ()
+	local function writeNumberField(target: buffer, cursor: number, owner: { [string]: any }): ()
 		writeU32(target, cursor, owner[n3])
 	end
 
 	return {
-		measure = function(value: {[string]: any}): number
+		measure = function(value: { [string]: any }): number
 			return 9 + #value[n1]
 		end,
 
-		measureMany = function(values: {any}): number
+		measureMany = function(values: { any }): number
 			local size = 0
 
 			for index = 1, #values do
@@ -2691,7 +2788,7 @@ local function objectStringBoolU32Unit(n1: string, n2: string, n3: string): Unit
 			return size
 		end,
 
-		write = function(target: buffer, cursor: number, value: {[string]: any}): number
+		write = function(target: buffer, cursor: number, value: { [string]: any }): number
 			local text = value[n1]
 			local size = #text
 			local boolCursor = cursor + 4 + size
@@ -2704,7 +2801,7 @@ local function objectStringBoolU32Unit(n1: string, n2: string, n3: string): Unit
 			return boolCursor + 5
 		end,
 
-		writeMany = function(target: buffer, cursor: number, values: {any}): number
+		writeMany = function(target: buffer, cursor: number, values: { any }): number
 			for index = 1, #values do
 				local value = values[index]
 				local text = value[n1]
@@ -2721,7 +2818,7 @@ local function objectStringBoolU32Unit(n1: string, n2: string, n3: string): Unit
 			return cursor
 		end,
 
-		writePacked = function(batch: any, value: {[string]: any}): ()
+		writePacked = function(batch: any, value: { [string]: any }): ()
 			local text = value[n1]
 			local size = #text
 			local cursor = batch.size
@@ -2766,7 +2863,6 @@ local function objectStringBoolU32Unit(n1: string, n2: string, n3: string): Unit
 
 			return value, numberCursor + 4
 		end,
-
 	}
 end
 
@@ -2774,15 +2870,15 @@ local function objectU16U16U16Unit(n1: string, n2: string, n3: string): Unit
 	return {
 		size = 6,
 
-		measure = function(_value: {[string]: any}): number
+		measure = function(_value: { [string]: any }): number
 			return 6
 		end,
 
-		measureMany = function(values: {any}): number
+		measureMany = function(values: { any }): number
 			return #values * 6
 		end,
 
-		write = function(target: buffer, cursor: number, value: {[string]: any}): number
+		write = function(target: buffer, cursor: number, value: { [string]: any }): number
 			writeU16(target, cursor, value[n1])
 			writeU16(target, cursor + 2, value[n2])
 			writeU16(target, cursor + 4, value[n3])
@@ -2790,7 +2886,7 @@ local function objectU16U16U16Unit(n1: string, n2: string, n3: string): Unit
 			return cursor + 6
 		end,
 
-		writeMany = function(target: buffer, cursor: number, values: {any}): number
+		writeMany = function(target: buffer, cursor: number, values: { any }): number
 			for index = 1, #values do
 				local value = values[index]
 
@@ -2817,11 +2913,33 @@ local function objectU16U16U16Unit(n1: string, n2: string, n3: string): Unit
 	}
 end
 
-local function object5Unit(objectSize: number?, n1: string, n2: string, n3: string, n4: string, n5: string, m1: any, m2: any, m3: any, m4: any, m5: any, w1: any, w2: any, w3: any, w4: any, w5: any, r1: any, r2: any, r3: any, r4: any, r5: any): Unit
+local function object5Unit(
+	objectSize: number?,
+	n1: string,
+	n2: string,
+	n3: string,
+	n4: string,
+	n5: string,
+	m1: any,
+	m2: any,
+	m3: any,
+	m4: any,
+	m5: any,
+	w1: any,
+	w2: any,
+	w3: any,
+	w4: any,
+	w5: any,
+	r1: any,
+	r2: any,
+	r3: any,
+	r4: any,
+	r5: any
+): Unit
 	return {
 		size = objectSize,
 
-		measure = function(value: {[string]: any}): number
+		measure = function(value: { [string]: any }): number
 			if objectSize then
 				return objectSize
 			end
@@ -2829,7 +2947,7 @@ local function object5Unit(objectSize: number?, n1: string, n2: string, n3: stri
 			return m1(value[n1]) + m2(value[n2]) + m3(value[n3]) + m4(value[n4]) + m5(value[n5])
 		end,
 
-		measureMany = function(values: {any}): number
+		measureMany = function(values: { any }): number
 			if objectSize then
 				return #values * objectSize
 			end
@@ -2839,13 +2957,15 @@ local function object5Unit(objectSize: number?, n1: string, n2: string, n3: stri
 			for index = 1, #values do
 				local value = values[index]
 
-				size += m1(value[n1]) + m2(value[n2]) + m3(value[n3]) + m4(value[n4]) + m5(value[n5])
+				size += m1(value[n1]) + m2(value[n2]) + m3(value[n3]) + m4(value[n4]) + m5(
+					value[n5]
+				)
 			end
 
 			return size
 		end,
 
-		write = function(target: buffer, cursor: number, value: {[string]: any}): number
+		write = function(target: buffer, cursor: number, value: { [string]: any }): number
 			cursor = w1(target, cursor, value[n1])
 			cursor = w2(target, cursor, value[n2])
 			cursor = w3(target, cursor, value[n3])
@@ -2855,7 +2975,7 @@ local function object5Unit(objectSize: number?, n1: string, n2: string, n3: stri
 			return cursor
 		end,
 
-		writeMany = function(target: buffer, cursor: number, values: {any}): number
+		writeMany = function(target: buffer, cursor: number, values: { any }): number
 			for index = 1, #values do
 				local value = values[index]
 
@@ -2869,14 +2989,19 @@ local function object5Unit(objectSize: number?, n1: string, n2: string, n3: stri
 			return cursor
 		end,
 
-		writePacked = function(batch: any, value: {[string]: any}): ()
+		writePacked = function(batch: any, value: { [string]: any }): ()
 			local cursor = batch.size
 			local needed: number
 
 			if objectSize then
 				needed = cursor + objectSize
 			else
-				needed = cursor + m1(value[n1]) + m2(value[n2]) + m3(value[n3]) + m4(value[n4]) + m5(value[n5])
+				needed = cursor
+					+ m1(value[n1])
+					+ m2(value[n2])
+					+ m3(value[n3])
+					+ m4(value[n4])
+					+ m5(value[n5])
 			end
 
 			ensureCapacity(batch, needed)
@@ -2910,23 +3035,53 @@ local function object5Unit(objectSize: number?, n1: string, n2: string, n3: stri
 
 			return value, cursor
 		end,
-
 	}
 end
 
-local function object6Unit(objectSize: number?, n1: string, n2: string, n3: string, n4: string, n5: string, n6: string, m1: any, m2: any, m3: any, m4: any, m5: any, m6: any, w1: any, w2: any, w3: any, w4: any, w5: any, w6: any, r1: any, r2: any, r3: any, r4: any, r5: any, r6: any): Unit
+local function object6Unit(
+	objectSize: number?,
+	n1: string,
+	n2: string,
+	n3: string,
+	n4: string,
+	n5: string,
+	n6: string,
+	m1: any,
+	m2: any,
+	m3: any,
+	m4: any,
+	m5: any,
+	m6: any,
+	w1: any,
+	w2: any,
+	w3: any,
+	w4: any,
+	w5: any,
+	w6: any,
+	r1: any,
+	r2: any,
+	r3: any,
+	r4: any,
+	r5: any,
+	r6: any
+): Unit
 	return {
 		size = objectSize,
 
-		measure = function(value: {[string]: any}): number
+		measure = function(value: { [string]: any }): number
 			if objectSize then
 				return objectSize
 			end
 
-			return m1(value[n1]) + m2(value[n2]) + m3(value[n3]) + m4(value[n4]) + m5(value[n5]) + m6(value[n6])
+			return m1(value[n1])
+				+ m2(value[n2])
+				+ m3(value[n3])
+				+ m4(value[n4])
+				+ m5(value[n5])
+				+ m6(value[n6])
 		end,
 
-		measureMany = function(values: {any}): number
+		measureMany = function(values: { any }): number
 			if objectSize then
 				return #values * objectSize
 			end
@@ -2936,13 +3091,15 @@ local function object6Unit(objectSize: number?, n1: string, n2: string, n3: stri
 			for index = 1, #values do
 				local value = values[index]
 
-				size += m1(value[n1]) + m2(value[n2]) + m3(value[n3]) + m4(value[n4]) + m5(value[n5]) + m6(value[n6])
+				size += m1(value[n1]) + m2(value[n2]) + m3(value[n3]) + m4(value[n4]) + m5(
+					value[n5]
+				) + m6(value[n6])
 			end
 
 			return size
 		end,
 
-		write = function(target: buffer, cursor: number, value: {[string]: any}): number
+		write = function(target: buffer, cursor: number, value: { [string]: any }): number
 			cursor = w1(target, cursor, value[n1])
 			cursor = w2(target, cursor, value[n2])
 			cursor = w3(target, cursor, value[n3])
@@ -2953,7 +3110,7 @@ local function object6Unit(objectSize: number?, n1: string, n2: string, n3: stri
 			return cursor
 		end,
 
-		writeMany = function(target: buffer, cursor: number, values: {any}): number
+		writeMany = function(target: buffer, cursor: number, values: { any }): number
 			for index = 1, #values do
 				local value = values[index]
 
@@ -2990,7 +3147,16 @@ local function object6Unit(objectSize: number?, n1: string, n2: string, n3: stri
 	}
 end
 
-local function mapSize(value: {[any]: any}, keyCheck: any, keyMeasure: any, valueMeasure: any, lengthSize: number, minLength: number?, maxLength: number?, limit: number): number
+local function mapSize(
+	value: { [any]: any },
+	keyCheck: any,
+	keyMeasure: any,
+	valueMeasure: any,
+	lengthSize: number,
+	minLength: number?,
+	maxLength: number?,
+	limit: number
+): number
 	local size = lengthSize
 	local count = 0
 
@@ -3013,7 +3179,13 @@ local function mapSize(value: {[any]: any}, keyCheck: any, keyMeasure: any, valu
 	return size
 end
 
-local function mapKeys(value: {[any]: any}, keyCheck: any, minLength: number?, maxLength: number?, limit: number): ({any}, number)
+local function mapKeys(
+	value: { [any]: any },
+	keyCheck: any,
+	minLength: number?,
+	maxLength: number?,
+	limit: number
+): ({ any }, number)
 	local keys = {}
 	local count = 0
 
@@ -3036,7 +3208,13 @@ local function mapKeys(value: {[any]: any}, keyCheck: any, minLength: number?, m
 	return keys, count
 end
 
-local function mapUnit(keyUnit: Unit, valueUnit: Unit, keyCheck: any, minLength: number?, maxLength: number?): Unit
+local function mapUnit(
+	keyUnit: Unit,
+	valueUnit: Unit,
+	keyCheck: any,
+	minLength: number?,
+	maxLength: number?
+): Unit
 	local keyMeasure = keyUnit.measure
 	local valueMeasure = valueUnit.measure
 	local keyWrite = keyUnit.write
@@ -3047,21 +3225,39 @@ local function mapUnit(keyUnit: Unit, valueUnit: Unit, keyCheck: any, minLength:
 	local limit = if maxLength then min(maxLength, MAX_MAP_LENGTH) else MAX_MAP_LENGTH
 
 	return {
-		measure = function(value: {[any]: any}): number
-			return mapSize(value, keyCheck, keyMeasure, valueMeasure, lengthSize, minLength, maxLength, limit)
+		measure = function(value: { [any]: any }): number
+			return mapSize(
+				value,
+				keyCheck,
+				keyMeasure,
+				valueMeasure,
+				lengthSize,
+				minLength,
+				maxLength,
+				limit
+			)
 		end,
 
-		measureMany = function(values: {any}): number
+		measureMany = function(values: { any }): number
 			local size = 0
 
 			for index = 1, #values do
-				size += mapSize(values[index], keyCheck, keyMeasure, valueMeasure, lengthSize, minLength, maxLength, limit)
+				size += mapSize(
+					values[index],
+					keyCheck,
+					keyMeasure,
+					valueMeasure,
+					lengthSize,
+					minLength,
+					maxLength,
+					limit
+				)
 			end
 
 			return size
 		end,
 
-		write = function(target: buffer, cursor: number, value: {[any]: any}): number
+		write = function(target: buffer, cursor: number, value: { [any]: any }): number
 			local keys
 			local count
 
@@ -3079,7 +3275,7 @@ local function mapUnit(keyUnit: Unit, valueUnit: Unit, keyCheck: any, minLength:
 			return cursor
 		end,
 
-		writeMany = function(target: buffer, cursor: number, values: {any}): number
+		writeMany = function(target: buffer, cursor: number, values: { any }): number
 			for valueIndex = 1, #values do
 				local value = values[valueIndex]
 				local keys
@@ -3137,7 +3333,7 @@ local function optionalUnit(itemUnit: Unit): Unit
 			return 1 + itemMeasure(value)
 		end,
 
-		measureMany = function(values: {any}): number
+		measureMany = function(values: { any }): number
 			local size = 0
 
 			for index = 1, #values do
@@ -3163,7 +3359,7 @@ local function optionalUnit(itemUnit: Unit): Unit
 			return itemWrite(target, cursor + 1, value)
 		end,
 
-		writeMany = function(target: buffer, cursor: number, values: {any}): number
+		writeMany = function(target: buffer, cursor: number, values: { any }): number
 			for index = 1, #values do
 				local value = values[index]
 
@@ -3198,7 +3394,7 @@ local function optionalUnit(itemUnit: Unit): Unit
 	}
 end
 
-local function enumUnit(values: {any}, lookup: {[any]: number}): Unit
+local function enumUnit(values: { any }, lookup: { [any]: number }): Unit
 	local tagSize, writeTag, readTag = lengthCodec(#values - 1)
 
 	return {
@@ -3208,7 +3404,7 @@ local function enumUnit(values: {any}, lookup: {[any]: number}): Unit
 			return tagSize
 		end,
 
-		measureMany = function(payloads: {any}): number
+		measureMany = function(payloads: { any }): number
 			return #payloads * tagSize
 		end,
 
@@ -3223,7 +3419,7 @@ local function enumUnit(values: {any}, lookup: {[any]: number}): Unit
 			return cursor + tagSize
 		end,
 
-		writeMany = function(target: buffer, cursor: number, payloads: {any}): number
+		writeMany = function(target: buffer, cursor: number, payloads: { any }): number
 			for index = 1, #payloads do
 				local value = payloads[index]
 				local ordinal = lookup[value]
@@ -3252,7 +3448,12 @@ local function enumUnit(values: {any}, lookup: {[any]: number}): Unit
 			return value, cursor + tagSize
 		end,
 
-		stream = function(source: buffer, cursor: number, count: number, callback: (any) -> ()): number
+		stream = function(
+			source: buffer,
+			cursor: number,
+			count: number,
+			callback: (any) -> ()
+		): number
 			for _index = 1, count do
 				ensureReadable(source, cursor, tagSize)
 
@@ -3270,7 +3471,13 @@ local function enumUnit(values: {any}, lookup: {[any]: number}): Unit
 			return cursor
 		end,
 
-		streamSender = function(source: buffer, cursor: number, count: number, sender: Player, callback: (Player, any) -> ()): number
+		streamSender = function(
+			source: buffer,
+			cursor: number,
+			count: number,
+			sender: Player,
+			callback: (Player, any) -> ()
+		): number
 			for _index = 1, count do
 				ensureReadable(source, cursor, tagSize)
 
@@ -3300,7 +3507,7 @@ local function fixedArrayUnit(itemUnit: Unit, length: number): Unit
 	return {
 		size = fixedSize,
 
-		measure = function(value: {any}): number
+		measure = function(value: { any }): number
 			if #value ~= length then
 				error("[VNet]: array length must match fixed length.", 3)
 			end
@@ -3318,7 +3525,7 @@ local function fixedArrayUnit(itemUnit: Unit, length: number): Unit
 			return size
 		end,
 
-		measureMany = function(values: {any}): number
+		measureMany = function(values: { any }): number
 			if fixedSize then
 				return #values * fixedSize
 			end
@@ -3340,7 +3547,7 @@ local function fixedArrayUnit(itemUnit: Unit, length: number): Unit
 			return size
 		end,
 
-		write = function(target: buffer, cursor: number, value: {any}): number
+		write = function(target: buffer, cursor: number, value: { any }): number
 			if #value ~= length then
 				error("[VNet]: array length must match fixed length.", 3)
 			end
@@ -3352,7 +3559,7 @@ local function fixedArrayUnit(itemUnit: Unit, length: number): Unit
 			return cursor
 		end,
 
-		writeMany = function(target: buffer, cursor: number, values: {any}): number
+		writeMany = function(target: buffer, cursor: number, values: { any }): number
 			for valueIndex = 1, #values do
 				local value = values[valueIndex]
 
@@ -3387,11 +3594,11 @@ local function fixedArrayUnit(itemUnit: Unit, length: number): Unit
 	}
 end
 
-local function variantUnit(order: {string}, unitsByName: {[string]: Unit}): Unit
+local function variantUnit(order: { string }, unitsByName: { [string]: Unit }): Unit
 	local count = orderCount(order)
 	local tagSize, writeTag, readTag = lengthCodec(count - 1)
-	local indexByName: {[string]: number} = {}
-	local unitByIndex: {Unit} = createArray(count)
+	local indexByName: { [string]: number } = {}
+	local unitByIndex: { Unit } = createArray(count)
 
 	for index = 1, count do
 		local name = readOrderName(order, index)
@@ -3415,7 +3622,7 @@ local function variantUnit(order: {string}, unitsByName: {[string]: Unit}): Unit
 			return tagSize + unit.measure(readVariantValue(value))
 		end,
 
-		measureMany = function(values: {any}): number
+		measureMany = function(values: { any }): number
 			local size = 0
 
 			for index = 1, #values do
@@ -3451,7 +3658,7 @@ local function variantUnit(order: {string}, unitsByName: {[string]: Unit}): Unit
 			return unit.write(target, cursor + tagSize, readVariantValue(value))
 		end,
 
-		writeMany = function(target: buffer, cursor: number, values: {any}): number
+		writeMany = function(target: buffer, cursor: number, values: { any }): number
 			for index = 1, #values do
 				local value = values[index]
 				local name = readVariantKind(value)
@@ -3506,7 +3713,7 @@ local function literalUnit(expected: any): Unit
 			return 0
 		end,
 
-		measureMany = function(values: {any}): number
+		measureMany = function(values: { any }): number
 			for index = 1, #values do
 				if values[index] ~= expected then
 					error("[VNet]: literal value does not match schema.", 3)
@@ -3524,7 +3731,7 @@ local function literalUnit(expected: any): Unit
 			return cursor
 		end,
 
-		writeMany = function(_target: buffer, cursor: number, values: {any}): number
+		writeMany = function(_target: buffer, cursor: number, values: { any }): number
 			for index = 1, #values do
 				if values[index] ~= expected then
 					error("[VNet]: literal value does not match schema.", 3)
@@ -3540,11 +3747,11 @@ local function literalUnit(expected: any): Unit
 	}
 end
 
-local function tupleUnit(units: {Unit}, count: number): Unit
+local function tupleUnit(members: { Unit }, count: number): Unit
 	local fixedSize = 0
 
 	for index = 1, count do
-		local unit = units[index]
+		local unit = members[index]
 		local unitSize = unit.size
 
 		if unitSize then
@@ -3560,7 +3767,7 @@ local function tupleUnit(units: {Unit}, count: number): Unit
 	return {
 		size = tupleSize,
 
-		measure = function(value: {any}): number
+		measure = function(value: { any }): number
 			if tupleSize then
 				return tupleSize
 			end
@@ -3568,7 +3775,7 @@ local function tupleUnit(units: {Unit}, count: number): Unit
 			local size = 0
 
 			for index = 1, count do
-				local unit = units[index]
+				local unit = members[index]
 
 				size += unit.measure(value[index])
 			end
@@ -3576,7 +3783,7 @@ local function tupleUnit(units: {Unit}, count: number): Unit
 			return size
 		end,
 
-		measureMany = function(values: {any}): number
+		measureMany = function(values: { any }): number
 			if tupleSize then
 				return #values * tupleSize
 			end
@@ -3587,7 +3794,7 @@ local function tupleUnit(units: {Unit}, count: number): Unit
 				local value = values[valueIndex]
 
 				for itemIndex = 1, count do
-					local unit = units[itemIndex]
+					local unit = members[itemIndex]
 
 					size += unit.measure(value[itemIndex])
 				end
@@ -3596,9 +3803,9 @@ local function tupleUnit(units: {Unit}, count: number): Unit
 			return size
 		end,
 
-		write = function(target: buffer, cursor: number, value: {any}): number
+		write = function(target: buffer, cursor: number, value: { any }): number
 			for index = 1, count do
-				local unit = units[index]
+				local unit = members[index]
 
 				cursor = unit.write(target, cursor, value[index])
 			end
@@ -3606,12 +3813,12 @@ local function tupleUnit(units: {Unit}, count: number): Unit
 			return cursor
 		end,
 
-		writeMany = function(target: buffer, cursor: number, values: {any}): number
+		writeMany = function(target: buffer, cursor: number, values: { any }): number
 			for valueIndex = 1, #values do
 				local value = values[valueIndex]
 
 				for itemIndex = 1, count do
-					local unit = units[itemIndex]
+					local unit = members[itemIndex]
 
 					cursor = unit.write(target, cursor, value[itemIndex])
 				end
@@ -3624,7 +3831,7 @@ local function tupleUnit(units: {Unit}, count: number): Unit
 			local value = createArray(count)
 
 			for index = 1, count do
-				local unit = units[index]
+				local unit = members[index]
 				local decoded
 
 				decoded, cursor = unit.read(source, cursor)
@@ -3644,7 +3851,7 @@ local function refUnit(kind: string): Unit
 			return 4
 		end,
 
-		measureMany = function(values: {any}): number
+		measureMany = function(values: { any }): number
 			return #values * 4
 		end,
 
@@ -3660,7 +3867,7 @@ local function refUnit(kind: string): Unit
 			return cursor + 4
 		end,
 
-		writeMany = function(target: buffer, cursor: number, values: {any}): number
+		writeMany = function(target: buffer, cursor: number, values: { any }): number
 			for index = 1, #values do
 				local value = values[index]
 				local id = InstanceRegistry.id(kind, value)
@@ -3689,7 +3896,12 @@ local function refUnit(kind: string): Unit
 			return instance, cursor + 4
 		end,
 
-		stream = function(source: buffer, cursor: number, count: number, callback: (any) -> ()): number
+		stream = function(
+			source: buffer,
+			cursor: number,
+			count: number,
+			callback: (any) -> ()
+		): number
 			for _index = 1, count do
 				ensureReadable(source, cursor, 4)
 
@@ -3707,7 +3919,13 @@ local function refUnit(kind: string): Unit
 			return cursor
 		end,
 
-		streamSender = function(source: buffer, cursor: number, count: number, sender: Player, callback: (Player, any) -> ()): number
+		streamSender = function(
+			source: buffer,
+			cursor: number,
+			count: number,
+			sender: Player,
+			callback: (Player, any) -> ()
+		): number
 			for _index = 1, count do
 				ensureReadable(source, cursor, 4)
 
@@ -3749,7 +3967,11 @@ local function hasMaskBit(mask: number, index: number): boolean
 	return floor(mask / bit) % 2 >= 1
 end
 
-local function deltaScan(changes: any, fieldIndexByName: {[string]: number}, count: number): (number, number)
+local function deltaScan(
+	changes: any,
+	fieldIndexByName: { [string]: number },
+	count: number
+): (number, number)
 	if typeof(changes) ~= "table" then
 		error("[VNet]: delta changes must be a table.", 3)
 	end
@@ -3787,11 +4009,11 @@ local function deltaScan(changes: any, fieldIndexByName: {[string]: number}, cou
 	return mask, changed
 end
 
-local function deltaUnit(idUnit: Unit, order: {string}, fieldUnits: {Unit}, count: number): Unit
-	local fieldIndexByName: {[string]: number} = {}
-	local fieldMeasures: {any} = {}
-	local fieldWrites: {any} = {}
-	local fieldReads: {any} = {}
+local function deltaUnit(idUnit: Unit, order: { string }, fieldUnits: { Unit }, count: number): Unit
+	local fieldIndexByName: { [string]: number } = {}
+	local fieldMeasures: { any } = {}
+	local fieldWrites: { any } = {}
+	local fieldReads: { any } = {}
 	local idMeasure = idUnit.measure
 	local idWrite = idUnit.write
 	local idRead = idUnit.read
@@ -3809,13 +4031,13 @@ local function deltaUnit(idUnit: Unit, order: {string}, fieldUnits: {Unit}, coun
 	end
 
 	return {
-		measure = function(value: {[string]: any}): number
+		measure = function(value: { [string]: any }): number
 			local id = getField(value, "id")
 			local changes = getField(value, "changes")
 			local size = idMeasure(id) + maskSize
 
 			deltaScan(changes, fieldIndexByName, count)
-			local deltaChanges = changes :: {[string]: any}
+			local deltaChanges = changes :: { [string]: any }
 
 			for index = 1, count do
 				local name = readOrderName(order, index)
@@ -3829,7 +4051,7 @@ local function deltaUnit(idUnit: Unit, order: {string}, fieldUnits: {Unit}, coun
 			return size
 		end,
 
-		measureMany = function(values: {any}): number
+		measureMany = function(values: { any }): number
 			local size = 0
 
 			for index = 1, #values do
@@ -3839,7 +4061,7 @@ local function deltaUnit(idUnit: Unit, order: {string}, fieldUnits: {Unit}, coun
 
 				size += idMeasure(id) + maskSize
 				deltaScan(changes, fieldIndexByName, count)
-				local deltaChanges = changes :: {[string]: any}
+				local deltaChanges = changes :: { [string]: any }
 
 				for fieldIndex = 1, count do
 					local name = readOrderName(order, fieldIndex)
@@ -3854,11 +4076,11 @@ local function deltaUnit(idUnit: Unit, order: {string}, fieldUnits: {Unit}, coun
 			return size
 		end,
 
-		write = function(target: buffer, cursor: number, value: {[string]: any}): number
+		write = function(target: buffer, cursor: number, value: { [string]: any }): number
 			local id = getField(value, "id")
 			local changes = getField(value, "changes")
 			local mask = deltaScan(changes, fieldIndexByName, count)
-			local deltaChanges = changes :: {[string]: any}
+			local deltaChanges = changes :: { [string]: any }
 
 			cursor = idWrite(target, cursor, id)
 			writeMask(target, cursor, mask)
@@ -3875,13 +4097,13 @@ local function deltaUnit(idUnit: Unit, order: {string}, fieldUnits: {Unit}, coun
 			return cursor
 		end,
 
-		writeMany = function(target: buffer, cursor: number, values: {any}): number
+		writeMany = function(target: buffer, cursor: number, values: { any }): number
 			for valueIndex = 1, #values do
 				local value = values[valueIndex]
 				local id = getField(value, "id")
 				local changes = getField(value, "changes")
 				local mask = deltaScan(changes, fieldIndexByName, count)
-				local deltaChanges = changes :: {[string]: any}
+				local deltaChanges = changes :: { [string]: any }
 
 				cursor = idWrite(target, cursor, id)
 				writeMask(target, cursor, mask)
@@ -3947,7 +4169,7 @@ local function flagsUnit(count: number): Unit
 			return maskSize
 		end,
 
-		measureMany = function(values: {any}): number
+		measureMany = function(values: { any }): number
 			for index = 1, #values do
 				local value = values[index]
 
@@ -3964,7 +4186,7 @@ local function flagsUnit(count: number): Unit
 			return cursor + maskSize
 		end,
 
-		writeMany = function(target: buffer, cursor: number, values: {any}): number
+		writeMany = function(target: buffer, cursor: number, values: { any }): number
 			for index = 1, #values do
 				writeMask(target, cursor, values[index])
 				cursor += maskSize
@@ -4006,7 +4228,6 @@ local function compileGuard(guard: Guard): Unit?
 	local maxLength = readGuardMaxLength(guard)
 
 	if guardKind == "string" and (minLength or maxLength) then
-
 		return stringUnit(minLength, maxLength)
 	end
 
@@ -4035,9 +4256,9 @@ local function compileGuard(guard: Guard): Unit?
 	end
 
 	if guardKind == "tuple" and readGuardItems(guard) then
-		local items = readGuardItems(guard) :: {Guard}
+		local items = readGuardItems(guard) :: { Guard }
 		local count = packedCount(items)
-		local units = createArray(count)
+		local members = createArray(count)
 
 		for index = 1, count do
 			local itemGuard = getField(items, index) :: Guard
@@ -4047,10 +4268,10 @@ local function compileGuard(guard: Guard): Unit?
 				return nil
 			end
 
-			units[index] = unit
+			members[index] = unit
 		end
 
-		return tupleUnit(units, count)
+		return tupleUnit(members, count)
 	end
 
 	local guardLookup = readGuardLookup(guard)
@@ -4104,7 +4325,7 @@ local function compileGuard(guard: Guard): Unit?
 	if guardKind == "variant" and guardShape and guardOrder then
 		local shape = guardShape
 		local order = guardOrder
-		local unitsByName: {[string]: Unit} = {}
+		local unitsByName: { [string]: Unit } = {}
 		local count = orderCount(order)
 
 		for index = 1, count do
@@ -4125,10 +4346,10 @@ local function compileGuard(guard: Guard): Unit?
 	if guardKind == "object" and guardShape and guardOrder then
 		local shape = guardShape
 		local order = guardOrder
-		local fieldUnits: {Unit} = {}
-		local fieldMeasures: {any} = {}
-		local fieldWrites: {any} = {}
-		local fieldReads: {any} = {}
+		local fieldUnits: { Unit } = {}
+		local fieldMeasures: { any } = {}
+		local fieldWrites: { any } = {}
+		local fieldReads: { any } = {}
 		local fixedSize = 0
 		local count = orderCount(order)
 
@@ -4196,7 +4417,8 @@ local function compileGuard(guard: Guard): Unit?
 				local childOrder = readGuardOrder(childGuard)
 				local childCount = if childOrder then orderCount(childOrder) else 0
 
-				if fieldUnit1 == u32ArrayUnit
+				if
+					fieldUnit1 == u32ArrayUnit
 					and fieldUnit2 == u32ArrayUnit
 					and childShape
 					and childOrder
@@ -4207,7 +4429,10 @@ local function compileGuard(guard: Guard): Unit?
 					local childField1 = readShapeGuard(childShape, childName1)
 					local childField2 = readShapeGuard(childShape, childName2)
 
-					if readGuardKind(childField1) == "string" and readGuardKind(childField2) == "bool" then
+					if
+						readGuardKind(childField1) == "string"
+						and readGuardKind(childField2) == "bool"
+					then
 						CodecSpecializations.writeLargeNestedUnit(
 							CodecState,
 							"objectUnit",
@@ -4220,7 +4445,12 @@ local function compileGuard(guard: Guard): Unit?
 					end
 				end
 
-				if CodecState.objectUnit == nil and fieldUnit1 == u16Unit and fieldUnit2 == u16Unit and fieldUnit3 == u16Unit then
+				if
+					CodecState.objectUnit == nil
+					and fieldUnit1 == u16Unit
+					and fieldUnit2 == u16Unit
+					and fieldUnit3 == u16Unit
+				then
 					CodecState.objectUnit = objectU16U16U16Unit(name1, name2, name3)
 				end
 
@@ -4273,12 +4503,17 @@ local function compileGuard(guard: Guard): Unit?
 		if CodecState.objectUnit == nil and objectOrderCount == 6 then
 			local lookGuard = readShapeGuard(shape, name2)
 			local positionGuard = readShapeGuard(shape, name4)
-			local lookScale = if readGuardKind(lookGuard) == "qtransform_yaw_i16" then readGuardScale(lookGuard) or 1 else nil
-			local positionScale = if readGuardKind(positionGuard) == "qvec3_i16" then readGuardScale(positionGuard) or 1 else nil
+			local lookScale = if readGuardKind(lookGuard) == "qtransform_yaw_i16"
+				then readGuardScale(lookGuard) or 1
+				else nil
+			local positionScale = if readGuardKind(positionGuard) == "qvec3_i16"
+				then readGuardScale(positionGuard) or 1
+				else nil
 			local hasLookCodec = fieldUnit2 == units.cframe or lookScale ~= nil
 			local hasPositionCodec = fieldUnit4 == units.vec3 or positionScale ~= nil
 
-			if fieldUnit1 == u32Unit
+			if
+				fieldUnit1 == u32Unit
 				and hasLookCodec
 				and hasPositionCodec
 				and fieldUnit5 == u32ArrayUnit
@@ -4334,7 +4569,7 @@ local function compileGuard(guard: Guard): Unit?
 			CodecState.objectUnit = {
 				size = objectSize,
 
-				measure = function(value: {[string]: any}): number
+				measure = function(value: { [string]: any }): number
 					if objectSize then
 						return objectSize
 					end
@@ -4350,7 +4585,7 @@ local function compileGuard(guard: Guard): Unit?
 					return size
 				end,
 
-				measureMany = function(values: {any}): number
+				measureMany = function(values: { any }): number
 					if objectSize then
 						return #values * objectSize
 					end
@@ -4370,7 +4605,7 @@ local function compileGuard(guard: Guard): Unit?
 					return size
 				end,
 
-				write = function(target: buffer, cursor: number, value: {[string]: any}): number
+				write = function(target: buffer, cursor: number, value: { [string]: any }): number
 					for index = 1, objectOrderCount do
 						local name = readOrderName(order, index)
 
@@ -4380,7 +4615,7 @@ local function compileGuard(guard: Guard): Unit?
 					return cursor
 				end,
 
-				writeMany = function(target: buffer, cursor: number, values: {any}): number
+				writeMany = function(target: buffer, cursor: number, values: { any }): number
 					for valueIndex = 1, #values do
 						local value = values[valueIndex]
 
@@ -4445,7 +4680,7 @@ local function compileGuard(guard: Guard): Unit?
 		local limit = if maxLength then min(maxLength, MAX_ARRAY_LENGTH) else MAX_ARRAY_LENGTH
 
 		return {
-			measure = function(value: {any}): number
+			measure = function(value: { any }): number
 				local length = #value
 
 				checkWriteLength(length, minLength, maxLength, limit, "array")
@@ -4465,7 +4700,7 @@ local function compileGuard(guard: Guard): Unit?
 				return size
 			end,
 
-			measureMany = function(values: {any}): number
+			measureMany = function(values: { any }): number
 				local size = 0
 
 				if itemSize then
@@ -4497,7 +4732,7 @@ local function compileGuard(guard: Guard): Unit?
 				return size
 			end,
 
-			write = function(target: buffer, cursor: number, value: {any}): number
+			write = function(target: buffer, cursor: number, value: { any }): number
 				local length = #value
 
 				checkWriteLength(length, minLength, maxLength, limit, "array")
@@ -4514,7 +4749,7 @@ local function compileGuard(guard: Guard): Unit?
 				return cursor
 			end,
 
-			writeMany = function(target: buffer, cursor: number, values: {any}): number
+			writeMany = function(target: buffer, cursor: number, values: { any }): number
 				for valueIndex = 1, #values do
 					local value = values[valueIndex]
 					local length = #value
@@ -4601,7 +4836,7 @@ function Codec.compile(guard: Guard): Unit?
 	return unit
 end
 
-function Codec.encodeMany(unit: Unit, payloads: {any}): buffer
+function Codec.encodeMany(unit: Unit, payloads: { any }): buffer
 	local size = 0
 	local fixedSize = unit.size
 
@@ -4661,7 +4896,13 @@ function Codec.decodeOne(unit: Unit, source: buffer, cursor: number): (any, numb
 	return value, cursor
 end
 
-function Codec.stream(unit: Unit, source: buffer, cursor: number, count: number, callback: (any) -> ()): number
+function Codec.stream(
+	unit: Unit,
+	source: buffer,
+	cursor: number,
+	count: number,
+	callback: (any) -> ()
+): number
 	ensurePacketSize(source)
 
 	local streamer = unit.stream
@@ -4686,7 +4927,14 @@ function Codec.stream(unit: Unit, source: buffer, cursor: number, count: number,
 	return cursor
 end
 
-function Codec.streamSender(unit: Unit, source: buffer, cursor: number, count: number, sender: Player, callback: (Player, any) -> ()): number
+function Codec.streamSender(
+	unit: Unit,
+	source: buffer,
+	cursor: number,
+	count: number,
+	sender: Player,
+	callback: (Player, any) -> ()
+): number
 	ensurePacketSize(source)
 
 	local streamer = unit.streamSender
