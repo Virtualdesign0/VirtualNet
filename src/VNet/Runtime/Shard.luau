@@ -19,7 +19,7 @@ local function assertName(name: any): string
 	return name
 end
 
-local function assertSchema(schema: any): {[string]: any}
+local function assertSchema(schema: any): { [string]: any }
 	if typeof(schema) ~= "table" then
 		error("[VNet]: shard bridge expects a schema table.", 3)
 	end
@@ -27,7 +27,7 @@ local function assertSchema(schema: any): {[string]: any}
 	return schema
 end
 
-local function makeGuards(schema: {[string]: any}): {[string]: any}
+local function makeGuards(schema: { [string]: any }): { [string]: any }
 	local guards = {}
 
 	for packetName, spec in schema do
@@ -41,20 +41,26 @@ local function makeGuards(schema: {[string]: any}): {[string]: any}
 	return guards
 end
 
-function Shard.bridge(name: string, schema: {[string]: any}, options: {[any]: any}?)
+function Shard.bridge(name: string, schema: { [string]: any }, options: { [any]: any }?)
 	name = assertName(name)
 	schema = assertSchema(schema)
-	options = options or {}
+	-- A new local rather than a reassigned parameter: the analyser does not
+	-- carry the narrowing through an assignment back onto the parameter, so
+	-- every read below would still be seen as possibly nil. Annotated, because an
+	-- unannotated `or {}` widens to a union with the empty literal, which has no
+	-- keys of its own. Typed with a string key rather than any: every read below
+	-- is a field name, and the looser key buys nothing.
+	local settings: { [string]: any } = options or {}
 
-	local topic = options.topic or ("VNet.Shard." .. name)
-	local shardId = options.shardId or options.role or name
-	local validate = if options.validate ~= nil then options.validate == true else true
-	local dedupeTtl = options.dedupeTtl or 120
-	local dedupeMap = if options.dedupe == true or options.memoryStore == true
+	local topic = settings.topic or ("VNet.Shard." .. name)
+	local shardId = settings.shardId or settings.role or name
+	local validate = if settings.validate ~= nil then settings.validate == true else true
+	local dedupeTtl = settings.dedupeTtl or 120
+	local dedupeMap = if settings.dedupe == true or settings.memoryStore == true
 		then MemoryStoreService:GetHashMap("VNet.Shard." .. name .. ".dedupe")
 		else nil
 	local guards = makeGuards(schema)
-	local signals: {[string]: any} = {}
+	local signals: { [string]: any } = {}
 	local subscription: RBXScriptConnection? = nil
 	local api = {}
 
@@ -65,7 +71,7 @@ function Shard.bridge(name: string, schema: {[string]: any}, options: {[any]: an
 			return signal
 		end
 
-		signal = Signal.new(options.defer == true)
+		signal = Signal.new(settings.defer == true)
 		signals[packetName] = signal
 
 		return signal
@@ -78,13 +84,18 @@ function Shard.bridge(name: string, schema: {[string]: any}, options: {[any]: an
 			return
 		end
 
-		if options.echo ~= true and data.source == JOB_ID then
+		if settings.echo ~= true and data.source == JOB_ID then
 			return
 		end
 
-		if dedupeMap and typeof(data.messageId) == "string" then
+		if dedupeMap ~= nil and typeof(data.messageId) == "string" then
+			-- Captured before the closures: a narrowing does not cross into one,
+			-- so inside them dedupeMap would still read as possibly nil.
+			local store = dedupeMap
+			local messageId = data.messageId
+
 			local ok, exists = pcall(function()
-				return dedupeMap:GetAsync(data.messageId)
+				return store:GetAsync(messageId)
 			end)
 
 			if ok and exists ~= nil then
@@ -92,7 +103,7 @@ function Shard.bridge(name: string, schema: {[string]: any}, options: {[any]: an
 			end
 
 			pcall(function()
-				dedupeMap:SetAsync(data.messageId, true, dedupeTtl)
+				store:SetAsync(messageId, true, dedupeTtl)
 			end)
 		end
 
@@ -162,7 +173,11 @@ function Shard.bridge(name: string, schema: {[string]: any}, options: {[any]: an
 		})
 	end
 
-	function api.On(_self: any, packetName: string, listener: (any, string?, {[string]: any}) -> ()): () -> ()
+	function api.On(
+		_self: any,
+		packetName: string,
+		listener: (any, string?, { [string]: any }) -> ()
+	): () -> ()
 		if typeof(listener) ~= "function" then
 			error("[VNet]: shard listener must be a function.", 2)
 		end
@@ -185,7 +200,7 @@ function Shard.bridge(name: string, schema: {[string]: any}, options: {[any]: an
 	api.on = api.On
 	api.connect = api.On
 
-	if options.autoStart ~= false then
+	if settings.autoStart ~= false then
 		api:Start()
 	end
 
