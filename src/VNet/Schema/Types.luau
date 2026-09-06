@@ -7,14 +7,14 @@ local Types = {}
 export type TypeGuard = {
 	kind: string,
 	check: (value: any) -> boolean,
-	shape: {[string]: TypeGuard}?,
-	order: {string}?,
+	shape: { [string]: TypeGuard }?,
+	order: { string }?,
 	item: TypeGuard?,
-	items: {TypeGuard}?,
+	items: { TypeGuard }?,
 	key: TypeGuard?,
 	value: TypeGuard?,
-	values: {any}?,
-	lookup: {[any]: number}?,
+	values: { any }?,
+	lookup: { [any]: number }?,
 	minLength: number?,
 	maxLength: number?,
 	scale: number?,
@@ -22,7 +22,6 @@ export type TypeGuard = {
 }
 
 local lower = string.lower
-local toString = tostring
 local getField = rawget
 
 local function isGuard(value: any): boolean
@@ -39,7 +38,11 @@ local function isMapKeyGuard(guard: TypeGuard): boolean
 	return false
 end
 
-local function lengthBounds(minLength: number?, maxLength: number?, label: string): (number?, number?)
+local function lengthBounds(
+	minLength: number?,
+	maxLength: number?,
+	label: string
+): (number?, number?)
 	if minLength == nil and maxLength == nil then
 		return nil, nil
 	end
@@ -63,7 +66,10 @@ local function lengthBounds(minLength: number?, maxLength: number?, label: strin
 	local hasInvalidRange = minBelowZero or maxBelowMin
 
 	if hasFraction or hasInvalidRange then
-		error("[VNet]: " .. label .. " bounds must be non-negative integers and max must be >= min.", 3)
+		error(
+			"[VNet]: " .. label .. " bounds must be non-negative integers and max must be >= min.",
+			3
+		)
 	end
 
 	return minBound, maxBound
@@ -81,17 +87,17 @@ local function lengthInBounds(length: number, minLength: number?, maxLength: num
 	return true
 end
 
-local function listCount(list: {any}): number
+local function listCount(list: { any }): number
 	return #list
 end
 
-local function appendList(list: {any}, value: any): ()
+local function appendList(list: { any }, value: any): ()
 	local index = listCount(list) + 1
 
 	list[index] = value
 end
 
-local scalar: {[string]: TypeGuard} = {}
+local scalar: { [string]: TypeGuard } = {}
 
 local function numberGuard(kind: string, min: number?, max: number?, integer: boolean): TypeGuard
 	return {
@@ -494,7 +500,7 @@ function Types.resolve(spec: any): TypeGuard
 	end
 
 	if typeof(spec) == "table" then
-		local shape: {[string]: TypeGuard} = {}
+		local shape: { [string]: TypeGuard } = {}
 
 		for field, fieldSpec in spec do
 			if typeof(field) ~= "string" then
@@ -510,9 +516,9 @@ function Types.resolve(spec: any): TypeGuard
 	error("[VNet]: Cannot use " .. typeof(spec) .. " as a schema type.", 3)
 end
 
-function Types.object(shape: {[string]: any}): TypeGuard
-	local resolved: {[string]: TypeGuard} = {}
-	local order: {string} = {}
+function Types.object(shape: { [string]: any }): TypeGuard
+	local resolved: { [string]: TypeGuard } = {}
+	local order: { string } = {}
 
 	for field, spec in shape do
 		resolved[field] = Types.resolve(spec)
@@ -671,7 +677,11 @@ function Types.instance(className: string?): TypeGuard
 				return false
 			end
 
-			if className and not value:IsA(className) then
+			-- Cast rather than narrowed: the newer solver does not carry a typeof
+			-- narrowing onto an any, so IsA reads as uncallable.
+			local instance = value :: Instance
+
+			if className and not instance:IsA(className) then
 				return false
 			end
 
@@ -680,13 +690,13 @@ function Types.instance(className: string?): TypeGuard
 	}
 end
 
-function Types.delta(shape: {[string]: any}, entityIdSpec: any?): TypeGuard
+function Types.delta(shape: { [string]: any }, entityIdSpec: any?): TypeGuard
 	if typeof(shape) ~= "table" then
 		error("[VNet]: delta expects a shape table.", 3)
 	end
 
-	local resolved: {[string]: TypeGuard} = {}
-	local order: {string} = {}
+	local resolved: { [string]: TypeGuard } = {}
+	local order: { string } = {}
 	local entityIdGuard = Types.resolve(if entityIdSpec == nil then "u32" else entityIdSpec)
 
 	for field, spec in shape do
@@ -749,7 +759,7 @@ function Types.delta(shape: {[string]: any}, entityIdSpec: any?): TypeGuard
 	}
 end
 
-function Types.enum(values: {any}): TypeGuard
+function Types.enum(values: { any }): TypeGuard
 	local allowed = {}
 	local indexByValue = {}
 	local ordered = table.create(#values)
@@ -786,7 +796,7 @@ function Types.enum(values: {any}): TypeGuard
 	}
 end
 
-function Types.flags(values: {string}): TypeGuard
+function Types.flags(values: { string }): TypeGuard
 	local allowed = {}
 	local indexByValue = {}
 	local ordered = table.create(#values)
@@ -828,9 +838,9 @@ function Types.flags(values: {string}): TypeGuard
 	}
 end
 
-function Types.variant(variants: {[string]: any}): TypeGuard
-	local resolved: {[string]: TypeGuard} = {}
-	local order: {string} = {}
+function Types.variant(variants: { [string]: any }): TypeGuard
+	local resolved: { [string]: TypeGuard } = {}
+	local order: { string } = {}
 
 	for name, spec in variants do
 		if typeof(name) ~= "string" then
