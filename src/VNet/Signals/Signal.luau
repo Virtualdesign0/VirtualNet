@@ -5,24 +5,46 @@ export type Connection = {
 	disconnect: (Connection) -> (),
 }
 
+-- The public shape, so callers and the analyser agree on one. Without it
+-- Signal.new's type is whatever the constructor happens to infer, and every
+-- `signal:connect(...)` in the codebase is checked against a structural shape
+-- rebuilt from scratch at each call site -- which the newer Luau solver, the
+-- one Studio runs, reports as a mismatch.
+export type Signal = {
+	connect: (Signal, (...any) -> ()) -> Connection,
+	once: (Signal, (...any) -> ()) -> Connection,
+	wait: (Signal) -> ...any,
+	fire: (Signal, ...any) -> (),
+	hasListeners: (Signal) -> boolean,
+	getSingleListener: (Signal) -> ((...any) -> ())?,
+	clear: (Signal) -> (),
+}
+
 local Signal = {}
 Signal.__index = Signal
 
 local END_NODE: any = table.freeze({})
 
-function Signal.new(deferCallbacks: boolean?)
-	return setmetatable({
-		_defer = deferCallbacks == true,
-		_head = END_NODE,
-		_tail = END_NODE,
-		_single = false,
-	}, Signal)
+function Signal.new(deferCallbacks: boolean?): Signal
+	return (
+		setmetatable({
+			_defer = deferCallbacks == true,
+			_head = END_NODE,
+			_tail = END_NODE,
+			_single = false,
+		}, Signal) :: any
+	) :: Signal
 end
 
 function Signal:_refreshSingle(): ()
 	local connection = self._head
 
-	if not self._defer and connection ~= END_NODE and connection == self._tail and connection.connected then
+	if
+		not self._defer
+		and connection ~= END_NODE
+		and connection == self._tail
+		and connection.connected
+	then
 		self._single = connection._callback
 	else
 		self._single = false
@@ -66,13 +88,17 @@ function Signal:connect(callback: (...any) -> ()): Connection
 		_next = END_NODE,
 	}
 
-	function connection:disconnect()
-		if not self.connected then
+	-- Written with an explicit parameter rather than as a method, because the
+	-- enclosing Signal:connect already has a `self` and it is the signal. Two
+	-- of them in one scope, one shadowing the other, is a line you have to read
+	-- twice to know which object it touches.
+	function connection.disconnect(link)
+		if not link.connected then
 			return
 		end
 
-		self.connected = false
-		self._owner:_sweep()
+		link.connected = false
+		link._owner:_sweep()
 	end
 
 	if self._tail ~= END_NODE then
@@ -100,9 +126,9 @@ end
 
 function Signal:wait(): ...any
 	local bindable = Instance.new("BindableEvent")
-	local connection: any
-
-	connection = self:once(function(...: any)
+	-- Assigned directly, not forward-declared: unlike once() above, this closure
+	-- does not name the connection, so there is nothing to declare ahead of.
+	local connection: Connection = self:once(function(...: any)
 		bindable:Fire(...)
 	end)
 
@@ -122,7 +148,10 @@ function Signal:fire(...: any): ()
 			local nextConnection = connection._next
 
 			if connection.connected then
-				task.spawn(connection._callback, ...)
+				-- Cast at the call: the node type is inferred and task.spawn's own
+				-- parameter is `thread | function`, which leaves the field as
+				-- something the newer solver will not accept here.
+				task.spawn(connection._callback :: (...any) -> (), ...)
 			end
 
 			if connection == tail then
@@ -139,7 +168,12 @@ function Signal:fire(...: any): ()
 		local nextConnection = connection._next
 
 		if connection.connected then
-			connection._callback(...)
+			-- Read into a typed local first: task.spawn takes `thread | function`
+			-- and that flows back onto the field, leaving a union this cannot
+			-- call. A connection only ever holds a function.
+			local callback = connection._callback :: (...any) -> ()
+
+			callback(...)
 		end
 
 		if connection == tail then
