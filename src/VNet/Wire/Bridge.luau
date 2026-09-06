@@ -8,14 +8,14 @@ export type Lane = "reliable" | "fast"
 local Bridge = {}
 
 local ROOT_NAME = "_VNet"
-local REMOTE_NAMES: {[Lane]: string} = {
+local REMOTE_NAMES: { [Lane]: string } = {
 	reliable = "Reliable",
 	fast = "Fast",
 }
 
 local started = false
 local root: Folder?
-local remotes: {[Lane]: any} = {} :: any
+local remotes: { [Lane]: any } = {} :: any
 
 local function createRemote(name: string, className: string): Instance
 	local ok, remoteOrError = pcall(function()
@@ -72,7 +72,7 @@ local function resolveRemote(lane: Lane): any
 		return createRemote(name, className)
 	end
 
-	return (root :: Folder):WaitForChild(name)
+	return (root :: Folder):WaitForChild(name, math.huge)
 end
 
 function Bridge.start(): ()
@@ -82,8 +82,11 @@ function Bridge.start(): ()
 
 	started = true
 	root = resolveRoot()
-	remotes.reliable = resolveRemote("reliable")
-	remotes.fast = resolveRemote("fast")
+	local reliable: Lane = "reliable"
+	local fast: Lane = "fast"
+
+	remotes[reliable] = resolveRemote(reliable)
+	remotes[fast] = resolveRemote(fast)
 end
 
 function Bridge.remote(lane: Lane): any
