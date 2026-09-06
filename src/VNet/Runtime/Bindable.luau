@@ -45,8 +45,8 @@ local function join(prefix: string?, key: string): string
 	return key
 end
 
-local function sortedSchemaKeys(schema: {[any]: any}): {string}?
-	local keys: {string} = {}
+local function sortedSchemaKeys(schema: { [any]: any }): { string }?
+	local keys: { string } = {}
 
 	for key in schema do
 		if typeof(key) ~= "string" or key == "" then
@@ -60,7 +60,7 @@ local function sortedSchemaKeys(schema: {[any]: any}): {string}?
 	return keys
 end
 
-local function cloneConfig(config: {[any]: any}): {[any]: any}
+local function cloneConfig(config: { [any]: any }): { [any]: any }
 	local cloned = table.clone(config)
 	cloned[PACKET_KEY] = nil
 	cloned[REQUEST_KEY] = nil
@@ -79,7 +79,7 @@ local function isRequestConfig(value: any): boolean
 	return typeof(value) == "table" and value[REQUEST_KEY] == true
 end
 
-local function packetLane(config: {[any]: any}): Lane
+local function packetLane(config: { [any]: any }): Lane
 	if config.fast == true or config.lane == "fast" or config.reliable == false then
 		return "fast"
 	end
@@ -107,10 +107,16 @@ local function validate(state: BindableState, payload: any): ()
 		return
 	end
 
-	error('[VNet]: Cannot send local "' .. state.name .. '": ' .. formatFailure(state.guardKind, payload), 4)
+	error(
+		'[VNet]: Cannot send local "'
+			.. state.name
+			.. '": '
+			.. formatFailure(state.guardKind, payload),
+		4
+	)
 end
 
-local function validateMany(state: BindableState, payloads: {any}): ()
+local function validateMany(state: BindableState, payloads: { any }): ()
 	for _, payload in ipairs(payloads) do
 		validate(state, payload)
 	end
@@ -132,7 +138,7 @@ local function firePrediction(state: BindableState, payload: any): ()
 	firePayloadSignal(state.predictionSignal, state.empty, payload)
 end
 
-local function firePredictions(state: BindableState, payloads: {any}): ()
+local function firePredictions(state: BindableState, payloads: { any }): ()
 	if not state.predictionSignal:hasListeners() then
 		return
 	end
@@ -154,7 +160,7 @@ local function dispatch(state: BindableState, payload: any): ()
 	firePayloadSignal(state.signal, state.empty, payload)
 end
 
-local function dispatchBatch(state: BindableState, payloads: {any}, count: number): ()
+local function dispatchBatch(state: BindableState, payloads: { any }, count: number): ()
 	state.batchSignal:fire(payloads, count)
 end
 
@@ -199,7 +205,7 @@ local function receiveOne(state: BindableState, payload: any): ()
 	dispatch(state, payload)
 end
 
-local function receiveMany(state: BindableState, payloads: {any}, count: number): ()
+local function receiveMany(state: BindableState, payloads: { any }, count: number): ()
 	if state.destroyed then
 		return
 	end
@@ -214,7 +220,7 @@ local function receiveMany(state: BindableState, payloads: {any}, count: number)
 	end
 end
 
-local function connectPacketSignal(signal: any, listener: any, methodName: string): (() -> ())
+local function connectPacketSignal(signal: any, listener: any, methodName: string): () -> ()
 	if typeof(listener) ~= "function" then
 		error("[VNet]: local packet." .. methodName .. " expects a callback.", 3)
 	end
@@ -226,14 +232,14 @@ local function connectPacketSignal(signal: any, listener: any, methodName: strin
 	end
 end
 
-local function deltaPayload(entityId: any, changes: any): {[string]: any}
+local function deltaPayload(entityId: any, changes: any): { [string]: any }
 	return {
 		id = entityId,
 		changes = changes,
 	}
 end
 
-local function makePacket(name: string, config: {[any]: any})
+local function makePacket(name: string, config: { [any]: any })
 	local guard: any = Types.resolve(config.payload or config.value or "none")
 	local id = config.id or Ids.hashName(name)
 
@@ -273,7 +279,7 @@ local function makePacket(name: string, config: {[any]: any})
 	state.eventConnection = event.Event:Connect(function(payload: any)
 		receiveOne(state, payload)
 	end)
-	state.batchConnection = batchEvent.Event:Connect(function(payloads: {any}, count: number)
+	state.batchConnection = batchEvent.Event:Connect(function(payloads: { any }, count: number)
 		receiveMany(state, payloads, count)
 	end)
 
@@ -286,7 +292,12 @@ local function makePacket(name: string, config: {[any]: any})
 
 	local function assertDeltaPacket(methodName: string): ()
 		if not state.delta then
-			error("[VNet]: local packet." .. methodName .. " can only be used with VNet.delta packets.", 3)
+			error(
+				"[VNet]: local packet."
+					.. methodName
+					.. " can only be used with VNet.delta packets.",
+				3
+			)
 		end
 	end
 
@@ -297,7 +308,7 @@ local function makePacket(name: string, config: {[any]: any})
 	packet.listen = packet.on
 	packet.connect = packet.on
 
-	function packet.onBatch(listener: (payloads: {any}, count: number) -> ())
+	function packet.onBatch(listener: (payloads: { any }, count: number) -> ())
 		return connectPacketSignal(state.batchSignal, listener, "onBatch")
 	end
 
@@ -356,7 +367,7 @@ local function makePacket(name: string, config: {[any]: any})
 		state.event:Fire(payload)
 	end
 
-	function packet.many(payloads: {any}): ()
+	function packet.many(payloads: { any }): ()
 		validateMany(state, payloads)
 		firePredictions(state, payloads)
 
@@ -390,7 +401,7 @@ local function makePacket(name: string, config: {[any]: any})
 		packetApi.send(deltaPayload(entityId, changes))
 	end
 
-	function packet.manyDelta(deltas: {any}): ()
+	function packet.manyDelta(deltas: { any }): ()
 		if not state.delta then
 			error("[VNet]: local packet.manyDelta can only be used with VNet.delta packets.", 3)
 		end
@@ -398,9 +409,12 @@ local function makePacket(name: string, config: {[any]: any})
 		packetApi.many(deltas)
 	end
 
-	function packet.flushManyDelta(deltas: {any}): ()
+	function packet.flushManyDelta(deltas: { any }): ()
 		if not state.delta then
-			error("[VNet]: local packet.flushManyDelta can only be used with VNet.delta packets.", 3)
+			error(
+				"[VNet]: local packet.flushManyDelta can only be used with VNet.delta packets.",
+				3
+			)
 		end
 
 		packetApi.flushMany(deltas)
@@ -430,7 +444,7 @@ local function makePacket(name: string, config: {[any]: any})
 	return table.freeze(packet)
 end
 
-local function defineNode(result: {[string]: any}, prefix: string?, schema: {[string]: any}): ()
+local function defineNode(result: { [string]: any }, prefix: string?, schema: { [string]: any }): ()
 	local keys = sortedSchemaKeys(schema)
 
 	if not keys then
@@ -463,7 +477,7 @@ local function defineNode(result: {[string]: any}, prefix: string?, schema: {[st
 	end
 end
 
-function Bindable.build(schema: {[string]: any})
+function Bindable.build(schema: { [string]: any })
 	if typeof(schema) ~= "table" then
 		error("[VNet]: VNet.bindable(...) expects a schema table.", 2)
 	end
