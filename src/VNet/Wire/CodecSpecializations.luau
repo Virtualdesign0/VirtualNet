@@ -7,9 +7,9 @@ local Specializations = {}
 type Unit = {
 	size: number?,
 	measure: (value: any) -> number,
-	measureMany: ((values: {any}) -> number)?,
+	measureMany: ((values: { any }) -> number)?,
 	write: (target: buffer, cursor: number, value: any) -> number,
-	writeMany: ((target: buffer, cursor: number, values: {any}) -> number)?,
+	writeMany: ((target: buffer, cursor: number, values: { any }) -> number)?,
 	writePacked: ((batch: any, value: any) -> ())?,
 	read: (source: buffer, cursor: number) -> (any, number),
 }
@@ -111,7 +111,7 @@ local function readBoundedString(source: buffer, cursor: number): (string, numbe
 	return value, textCursor + size
 end
 
-local function setBooleanField(target: {[any]: any}, key: any, flagByte: number): ()
+local function setBooleanField(target: { [any]: any }, key: any, flagByte: number): ()
 	if flagByte == 0 then
 		setField(target, key, FALSE_VALUE)
 		return
@@ -146,9 +146,15 @@ local function quantizeYaw(value: number): number
 	return scaled
 end
 
-function Specializations.objectLargeNestedUnit(n1: string, n2: string, n3: string, c1: string, c2: string): Unit
+function Specializations.objectLargeNestedUnit(
+	n1: string,
+	n2: string,
+	n3: string,
+	c1: string,
+	c2: string
+): Unit
 	return {
-		measure = function(value: {[string]: any}): number
+		measure = function(value: { [string]: any }): number
 			local first = value[n1]
 			local second = value[n2]
 			local child = value[n3]
@@ -157,7 +163,7 @@ function Specializations.objectLargeNestedUnit(n1: string, n2: string, n3: strin
 			return 13 + (#first + #second) * 4 + #label
 		end,
 
-		measureMany = function(values: {any}): number
+		measureMany = function(values: { any }): number
 			local size = 0
 
 			for index = 1, #values do
@@ -173,7 +179,7 @@ function Specializations.objectLargeNestedUnit(n1: string, n2: string, n3: strin
 			return size
 		end,
 
-		write = function(target: buffer, cursor: number, value: {[string]: any}): number
+		write = function(target: buffer, cursor: number, value: { [string]: any }): number
 			local first = value[n1]
 
 			writeU32(target, cursor, #first)
@@ -206,7 +212,7 @@ function Specializations.objectLargeNestedUnit(n1: string, n2: string, n3: strin
 			return boolCursor + 1
 		end,
 
-		writeMany = function(target: buffer, cursor: number, values: {any}): number
+		writeMany = function(target: buffer, cursor: number, values: { any }): number
 			for valueIndex = 1, #values do
 				local value = values[valueIndex]
 				local first = value[n1]
@@ -243,7 +249,7 @@ function Specializations.objectLargeNestedUnit(n1: string, n2: string, n3: strin
 			return cursor
 		end,
 
-		writePacked = function(batch: any, value: {[string]: any}): ()
+		writePacked = function(batch: any, value: { [string]: any }): ()
 			local first = value[n1]
 			local second = value[n2]
 			local child = value[n3]
@@ -331,7 +337,19 @@ function Specializations.objectLargeNestedUnit(n1: string, n2: string, n3: strin
 	}
 end
 
-function Specializations.objectStateUnit(n1: string, n2: string, n3: string, n4: string, n5: string, n6: string, lookScale: number?, positionScale: number?, nestedMeasure: any, nestedWrite: any, nestedRead: any): Unit
+function Specializations.objectStateUnit(
+	n1: string,
+	n2: string,
+	n3: string,
+	n4: string,
+	n5: string,
+	n6: string,
+	lookScale: number?,
+	positionScale: number?,
+	nestedMeasure: any,
+	nestedWrite: any,
+	nestedRead: any
+): Unit
 	if lookScale ~= nil and lookScale <= 0 then
 		error("[VNet]: qtransform_yaw_i16 scale must be greater than 0.", 3)
 	end
@@ -351,14 +369,14 @@ function Specializations.objectStateUnit(n1: string, n2: string, n3: string, n4:
 	local baseSize = 12 + lookSize + positionSize
 
 	return {
-		measure = function(value: {[string]: any}): number
+		measure = function(value: { [string]: any }): number
 			local samples = value[n5]
 			local text = value[n6]
 
 			return baseSize + nestedMeasure(value[n3]) + #samples * 4 + #text
 		end,
 
-		measureMany = function(values: {any}): number
+		measureMany = function(values: { any }): number
 			local size = 0
 
 			for index = 1, #values do
@@ -372,7 +390,7 @@ function Specializations.objectStateUnit(n1: string, n2: string, n3: string, n4:
 			return size
 		end,
 
-		write = function(target: buffer, cursor: number, value: {[string]: any}): number
+		write = function(target: buffer, cursor: number, value: { [string]: any }): number
 			writeU32(target, cursor, value[n1])
 			cursor += 4
 
@@ -396,7 +414,8 @@ function Specializations.objectStateUnit(n1: string, n2: string, n3: string, n4:
 				writeU8(target, cursor + 6, qyaw)
 				cursor += 7
 			else
-				local x, y, z, r00, r01, r02, r10, r11, r12, r20, r21, r22 = lookFrame:GetComponents()
+				local x, y, z, r00, r01, r02, r10, r11, r12, r20, r21, r22 =
+					lookFrame:GetComponents()
 
 				writeF32(target, cursor, x)
 				writeF32(target, cursor + 4, y)
@@ -455,7 +474,7 @@ function Specializations.objectStateUnit(n1: string, n2: string, n3: string, n4:
 			return cursor + 4 + textSize
 		end,
 
-		writeMany = function(target: buffer, cursor: number, values: {any}): number
+		writeMany = function(target: buffer, cursor: number, values: { any }): number
 			for index = 1, #values do
 				local value = values[index]
 
@@ -482,7 +501,8 @@ function Specializations.objectStateUnit(n1: string, n2: string, n3: string, n4:
 					writeU8(target, cursor + 6, qyaw)
 					cursor += 7
 				else
-					local x, y, z, r00, r01, r02, r10, r11, r12, r20, r21, r22 = lookFrame:GetComponents()
+					local x, y, z, r00, r01, r02, r10, r11, r12, r20, r21, r22 =
+						lookFrame:GetComponents()
 
 					writeF32(target, cursor, x)
 					writeF32(target, cursor + 4, y)
@@ -543,7 +563,7 @@ function Specializations.objectStateUnit(n1: string, n2: string, n3: string, n4:
 			return cursor
 		end,
 
-		writePacked = function(batch: any, value: {[string]: any}): ()
+		writePacked = function(batch: any, value: { [string]: any }): ()
 			local nested = value[n3]
 			local samples = value[n5]
 			local text = value[n6]
@@ -577,7 +597,8 @@ function Specializations.objectStateUnit(n1: string, n2: string, n3: string, n4:
 				writeU8(target, cursor + 6, qyaw)
 				cursor += 7
 			else
-				local x, y, z, r00, r01, r02, r10, r11, r12, r20, r21, r22 = lookFrame:GetComponents()
+				local x, y, z, r00, r01, r02, r10, r11, r12, r20, r21, r22 =
+					lookFrame:GetComponents()
 
 				writeF32(target, cursor, x)
 				writeF32(target, cursor + 4, y)
@@ -675,20 +696,7 @@ function Specializations.objectStateUnit(n1: string, n2: string, n3: string, n4:
 				local r21 = readF32(source, cursor + 40)
 				local r22 = readF32(source, cursor + 44)
 
-				frame = makeCFrame(
-					x,
-					y,
-					z,
-					r00,
-					r01,
-					r02,
-					r10,
-					r11,
-					r12,
-					r20,
-					r21,
-					r22
-				)
+				frame = makeCFrame(x, y, z, r00, r01, r02, r10, r11, r12, r20, r21, r22)
 				cursor += 48
 			end
 
@@ -720,11 +728,7 @@ function Specializations.objectStateUnit(n1: string, n2: string, n3: string, n4:
 				local py = readF32(source, cursor + 4)
 				local pz = readF32(source, cursor + 8)
 
-				position = makeVector3(
-					px,
-					py,
-					pz
-				)
+				position = makeVector3(px, py, pz)
 				cursor += 12
 			end
 
@@ -756,11 +760,33 @@ function Specializations.objectStateUnit(n1: string, n2: string, n3: string, n4:
 	}
 end
 
-function Specializations.writeLargeNestedUnit(target: any, key: string, n1: string, n2: string, n3: string, c1: string, c2: string): ()
+function Specializations.writeLargeNestedUnit(
+	target: any,
+	key: string,
+	n1: string,
+	n2: string,
+	n3: string,
+	c1: string,
+	c2: string
+): ()
 	target[key] = (Specializations :: any)["objectLargeNestedUnit"](n1, n2, n3, c1, c2)
 end
 
-function Specializations.writeStateUnit(target: any, key: string, n1: string, n2: string, n3: string, n4: string, n5: string, n6: string, lookScale: number?, positionScale: number?, nestedMeasure: any, nestedWrite: any, nestedRead: any): ()
+function Specializations.writeStateUnit(
+	target: any,
+	key: string,
+	n1: string,
+	n2: string,
+	n3: string,
+	n4: string,
+	n5: string,
+	n6: string,
+	lookScale: number?,
+	positionScale: number?,
+	nestedMeasure: any,
+	nestedWrite: any,
+	nestedRead: any
+): ()
 	target[key] = (Specializations :: any)["objectStateUnit"](
 		n1,
 		n2,
