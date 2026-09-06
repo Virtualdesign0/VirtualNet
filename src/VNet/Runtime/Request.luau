@@ -32,8 +32,8 @@ local getField = rawget
 local stringType = Types.string
 
 local nextRequestId = 0
-local cleanupCallbacks: {(Player) -> ()} = {}
-local timeoutSweeps: {TimeoutSweep} = {}
+local cleanupCallbacks: { (Player) -> () } = {}
+local timeoutSweeps: { TimeoutSweep } = {}
 local timeoutConnection: RBXScriptConnection? = nil
 local nextSweepAt = 0
 
@@ -134,14 +134,14 @@ local function timeoutFrom(options: any, defaultTimeout: number): number
 	return defaultTimeout
 end
 
-local function requestPayload(inputSpec: any): {[string]: any}
+local function requestPayload(inputSpec: any): { [string]: any }
 	return {
 		requestId = "u32",
 		value = inputSpec,
 	}
 end
 
-local function responsePayload(outputSpec: any): {[string]: any}
+local function responsePayload(outputSpec: any): { [string]: any }
 	return {
 		requestId = "u32",
 		result = Types.variant({
@@ -151,11 +151,12 @@ local function responsePayload(outputSpec: any): {[string]: any}
 	}
 end
 
-local function basePacketConfig(config: {[any]: any}): {[any]: any}
+local function basePacketConfig(config: { [any]: any }): { [any]: any }
 	local result = {}
 
 	for key, value in config do
-		if key ~= "payload"
+		if
+			key ~= "payload"
 			and key ~= "input"
 			and key ~= "response"
 			and key ~= "output"
@@ -183,7 +184,10 @@ local function basePacketConfig(config: {[any]: any}): {[any]: any}
 	return result
 end
 
-function Request.expand(name: string, config: {[any]: any}): ({[string]: any}, {[string]: any})
+function Request.expand(
+	name: string,
+	config: { [any]: any }
+): ({ [string]: any }, { [string]: any })
 	if config.lane == "fast" or config.fast == true or config.reliable == false then
 		error('[VNet]: Request "' .. name .. '" must use the reliable lane.', 3)
 	end
@@ -238,16 +242,18 @@ local function completePending(pending: Pending, ok: boolean, result: any): ()
 	end
 end
 
-function Request.define(name: string, config: {[any]: any})
+function Request.define(name: string, config: { [any]: any })
 	local requestInfo, responseInfo = Request.expand(name, config)
 	local requestPacket = Registry.define(requestInfo.name, requestInfo.config)
 	local responsePacket = Registry.define(responseInfo.name, responseInfo.config)
-	local defaultTimeout = if typeof(config.timeout) == "number" then config.timeout else DEFAULT_TIMEOUT
+	local defaultTimeout = if typeof(config.timeout) == "number"
+		then config.timeout
+		else DEFAULT_TIMEOUT
 	local handler: ((Player?, any) -> any)? = nil
 	local handlerDisconnect: (() -> ())? = nil
-	local pendingClient: {[number]: Pending} = {}
-	local pendingByPlayer: {[Player]: {[number]: Pending}} = {}
-	local pendingCountByPlayer: {[Player]: number} = {}
+	local pendingClient: { [number]: Pending } = {}
+	local pendingByPlayer: { [Player]: { [number]: Pending } } = {}
+	local pendingCountByPlayer: { [Player]: number } = {}
 	local pendingCount = 0
 	local sweepDisconnect: (() -> ())? = nil
 
@@ -286,7 +292,7 @@ function Request.define(name: string, config: {[any]: any})
 
 	local function sweepPending(now: number): ()
 		if IS_SERVER then
-			local emptyPlayers: {Player} = {}
+			local emptyPlayers: { Player } = {}
 
 			for player, playerPending in pendingByPlayer do
 				for requestId, pending in playerPending do
@@ -568,7 +574,16 @@ function Request.define(name: string, config: {[any]: any})
 		end
 
 		if IS_SERVER then
-			if typeof(first) ~= "Instance" or not first:IsA("Player") then
+			-- Cast after the typeof check rather than narrowed by it: the newer solver
+			-- does not carry a typeof narrowing onto an any, so IsA would read as
+			-- uncallable. The check above is what makes the cast true.
+			if typeof(first) ~= "Instance" then
+				error("[VNet]: server request invoke expects a Player as the first argument.", 3)
+			end
+
+			local firstInstance = first :: Instance
+
+			if not firstInstance:IsA("Player") then
 				error("[VNet]: server request invoke expects a Player as the first argument.", 3)
 			end
 
@@ -599,7 +614,7 @@ function Request.define(name: string, config: {[any]: any})
 		end
 	end
 
-	function api.handle(...: any): (() -> ())
+	function api.handle(...: any): () -> ()
 		local first = ...
 		local callback = first
 
@@ -673,53 +688,61 @@ function Request.define(name: string, config: {[any]: any})
 
 	function api.promise(...: any): any
 		local Promise = Config.promise
-		local promiseNew = if typeof(Promise) == "table" then getField(Promise, "new") elseif typeof(Promise) == "function" then Promise else nil
+		local promiseNew = if typeof(Promise) == "table"
+			then getField(Promise, "new")
+			elseif typeof(Promise) == "function" then Promise
+			else nil
 
 		if typeof(promiseNew) ~= "function" then
-			error("[VNet]: promise support is not configured. Call VNet.configure({ promise = Promise }).", 2)
+			error(
+				"[VNet]: promise support is not configured. Call VNet.configure({ promise = Promise }).",
+				2
+			)
 		end
 
 		local player, payload, options = parseInvokeArgs(...)
 		local timeout = timeoutFrom(options, defaultTimeout)
 
-		return (promiseNew :: any)(function(resolve: (any) -> (), reject: (any) -> (), onCancel: any)
-			if timeout <= 0 then
-				reject("[VNet]: request timeout must be greater than 0.")
-				return
-			end
+		return (promiseNew :: any)(
+			function(resolve: (any) -> (), reject: (any) -> (), onCancel: any)
+				if timeout <= 0 then
+					reject("[VNet]: request timeout must be greater than 0.")
+					return
+				end
 
-			local pending: Pending = {
-				event = nil,
-				deadline = clock() + timeout,
-				done = false,
-				ok = false,
-				result = nil,
-				resolve = resolve,
-				reject = reject,
-			}
-			local requestId = allocateId(player)
+				local pending: Pending = {
+					event = nil,
+					deadline = clock() + timeout,
+					done = false,
+					ok = false,
+					result = nil,
+					resolve = resolve,
+					reject = reject,
+				}
+				local requestId = allocateId(player)
 
-			putPending(player, requestId, pending)
+				putPending(player, requestId, pending)
 
-			if typeof(onCancel) == "function" then
-				(onCancel :: any)(function()
-					local cancelled = takePending(player, requestId)
+				if typeof(onCancel) == "function" then
+					(onCancel :: any)(function()
+						local cancelled = takePending(player, requestId)
 
-					if cancelled then
-						completePending(cancelled, false, "request_cancelled")
-					end
+						if cancelled then
+							completePending(cancelled, false, "request_cancelled")
+						end
+					end)
+				end
+
+				local sent, sendErrorMessage = pcall(function()
+					sendRequest(player, requestId, payload)
 				end)
-			end
 
-			local sent, sendErrorMessage = pcall(function()
-				sendRequest(player, requestId, payload)
-			end)
-
-			if not sent then
-				takePending(player, requestId)
-				completePending(pending, false, sendErrorMessage)
+				if not sent then
+					takePending(player, requestId)
+					completePending(pending, false, sendErrorMessage)
+				end
 			end
-		end)
+		)
 	end
 
 	api.call = api.invoke
