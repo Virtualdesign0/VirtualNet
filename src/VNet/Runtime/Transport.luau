@@ -26,72 +26,81 @@ local bufferLen = (buffer :: any)["len"]
 local clientDirty = false
 local serverDirty = false
 
-local clientQueues: {[Lane]: Batch} = {
+local clientQueues: { [Lane]: Batch } = {
 	reliable = FrameStore.new(),
 	fast = FrameStore.new(),
 }
 
-local targetQueues: {[Lane]: {[Player]: Batch}} = {
+local targetQueues: { [Lane]: { [Player]: Batch } } = {
 	reliable = {},
 	fast = {},
 }
 
-local broadcastQueues: {[Lane]: Batch} = {
+local broadcastQueues: { [Lane]: Batch } = {
 	reliable = FrameStore.new(),
 	fast = FrameStore.new(),
 }
 
-local clientPackedQueues: {[Lane]: {[number]: PackedBatch}} = {
+local clientPackedQueues: { [Lane]: { [number]: PackedBatch } } = {
 	reliable = {},
 	fast = {},
 }
 
-local targetPackedQueues: {[Lane]: {[Player]: {[number]: PackedBatch}}} = {
+local targetPackedQueues: { [Lane]: { [Player]: { [number]: PackedBatch } } } = {
 	reliable = {},
 	fast = {},
 }
 
-local broadcastPackedQueues: {[Lane]: {[number]: PackedBatch}} = {
+local broadcastPackedQueues: { [Lane]: { [number]: PackedBatch } } = {
 	reliable = {},
 	fast = {},
 }
 
-local clientPackedDirty: {[Lane]: boolean} = {
+local clientPackedDirty: { [Lane]: boolean } = {
 	reliable = false,
 	fast = false,
 }
 
-local clientFrameDirty: {[Lane]: boolean} = {
+local clientFrameDirty: { [Lane]: boolean } = {
 	reliable = false,
 	fast = false,
 }
 
-local targetPackedDirty: {[Lane]: boolean} = {
+local targetPackedDirty: { [Lane]: boolean } = {
 	reliable = false,
 	fast = false,
 }
 
-local targetFrameDirty: {[Lane]: boolean} = {
+local targetFrameDirty: { [Lane]: boolean } = {
 	reliable = false,
 	fast = false,
 }
 
-local broadcastPackedDirty: {[Lane]: boolean} = {
+local broadcastPackedDirty: { [Lane]: boolean } = {
 	reliable = false,
 	fast = false,
 }
 
-local broadcastFrameDirty: {[Lane]: boolean} = {
+local broadcastFrameDirty: { [Lane]: boolean } = {
 	reliable = false,
 	fast = false,
 }
 
 local function assertPlayer(player: any): Player
-	if typeof(player) ~= "Instance" or not player:IsA("Player") then
+	-- Cast after the typeof check rather than narrowed by it: the newer solver
+	-- does not carry a typeof narrowing onto an any, so IsA would read as
+	-- uncallable. The check above is what makes the cast true.
+	if typeof(player) ~= "Instance" then
 		error("[VNet]: Expected a Player target.", 3)
 	end
 
-	return player :: Player
+	local instance = player :: Instance
+
+	if not instance:IsA("Player") then
+		error("[VNet]: Expected a Player target.", 3)
+	end
+
+	return instance :: Player
 end
 
 local function sendBatchToServer(lane: Lane, frames: Batch): ()
@@ -160,7 +169,13 @@ local function sendPackedToServer(lane: Lane, id: number, count: number, payload
 	end
 end
 
-local function sendPackedToPlayer(lane: Lane, player: Player, id: number, count: number, payloads: buffer): ()
+local function sendPackedToPlayer(
+	lane: Lane,
+	player: Player,
+	id: number,
+	count: number,
+	payloads: buffer
+): ()
 	Bridge.remote(lane):FireClient(player, count, id, payloads, true)
 
 	if Config.stats then
@@ -258,7 +273,13 @@ local function sendOneToPlayer(lane: Lane, player: Player, id: number, payload: 
 	bumpSentDirect()
 end
 
-local function sendPackedOneToPlayer(lane: Lane, player: Player, id: number, unit: any, payload: any): ()
+local function sendPackedOneToPlayer(
+	lane: Lane,
+	player: Player,
+	id: number,
+	unit: any,
+	payload: any
+): ()
 	local payloads = encodePackedOne(unit, payload)
 
 	Bridge.remote(lane):FireClient(player, Protocol.PACKED_SINGLE, id, payloads)
@@ -277,7 +298,7 @@ local function sendPackedOneToAll(lane: Lane, id: number, unit: any, payload: an
 	bumpSentPackedDirect(payloads)
 end
 
-local function getPacked(owner: {[number]: PackedBatch}, id: number): PackedBatch
+local function getPacked(owner: { [number]: PackedBatch }, id: number): PackedBatch
 	local packet = owner[id]
 
 	if not packet then
@@ -288,7 +309,10 @@ local function getPacked(owner: {[number]: PackedBatch}, id: number): PackedBatc
 	return packet
 end
 
-local function getPlayerPacked(owner: {[Player]: {[number]: PackedBatch}}, player: Player): {[number]: PackedBatch}
+local function getPlayerPacked(
+	owner: { [Player]: { [number]: PackedBatch } },
+	player: Player
+): { [number]: PackedBatch }
 	local packets = owner[player]
 
 	if not packets then
@@ -417,7 +441,13 @@ local function flushServerIfDirty(): ()
 	end
 end
 
-function Transport.toServerPackedOne(lane: Lane, id: number, unit: any, payload: any, immediate: boolean?): ()
+function Transport.toServerPackedOne(
+	lane: Lane,
+	id: number,
+	unit: any,
+	payload: any,
+	immediate: boolean?
+): ()
 	if immediate then
 		flushClientIfDirty()
 		sendPackedOneToServer(lane, id, unit, payload)
@@ -429,7 +459,13 @@ function Transport.toServerPackedOne(lane: Lane, id: number, unit: any, payload:
 	clientPackedDirty[lane] = true
 end
 
-function Transport.toServerPackedMany(lane: Lane, id: number, unit: any, payloads: {any}, immediate: boolean?): ()
+function Transport.toServerPackedMany(
+	lane: Lane,
+	id: number,
+	unit: any,
+	payloads: { any },
+	immediate: boolean?
+): ()
 	PackedStore.pushMany(getPacked(clientPackedQueues[lane], id), unit, payloads)
 	clientDirty = true
 	clientPackedDirty[lane] = true
@@ -439,7 +475,13 @@ function Transport.toServerPackedMany(lane: Lane, id: number, unit: any, payload
 	end
 end
 
-function Transport.serverPackedWriter(lane: Lane, id: number, unit: any, immediate: boolean?, direct: boolean?): (any) -> ()
+function Transport.serverPackedWriter(
+	lane: Lane,
+	id: number,
+	unit: any,
+	immediate: boolean?,
+	direct: boolean?
+): (any) -> ()
 	local write = unit.write
 	local fixedSize = unit.size
 
@@ -539,7 +581,12 @@ function Transport.serverPackedWriter(lane: Lane, id: number, unit: any, immedia
 	end
 end
 
-function Transport.serverU32Writer(lane: Lane, id: number, immediate: boolean?, direct: boolean?): (number) -> ()
+function Transport.serverU32Writer(
+	lane: Lane,
+	id: number,
+	immediate: boolean?,
+	direct: boolean?
+): (number) -> ()
 	if direct then
 		local remote = Bridge.remote(lane)
 
@@ -605,7 +652,7 @@ function Transport.toServer(lane: Lane, id: number, payload: any, immediate: boo
 	clientFrameDirty[lane] = true
 end
 
-function Transport.toServerMany(lane: Lane, id: number, payloads: {any}, immediate: boolean?): ()
+function Transport.toServerMany(lane: Lane, id: number, payloads: { any }, immediate: boolean?): ()
 	FrameStore.pushMany(clientQueues[lane], id, payloads)
 	clientDirty = true
 	clientFrameDirty[lane] = true
@@ -620,7 +667,7 @@ function Transport.toServerPacked(lane: Lane, id: number, count: number, payload
 	sendPackedToServer(lane, id, count, payloads)
 end
 
-function Transport.toServerU32(lane: Lane, id: number, values: {any}): ()
+function Transport.toServerU32(lane: Lane, id: number, values: { any }): ()
 	Transport.flush()
 
 	local count = #values
@@ -664,7 +711,14 @@ function Transport.toPlayerPackedOne(
 	targetPackedDirty[lane] = true
 end
 
-function Transport.toPlayerPackedMany(lane: Lane, player: Player, id: number, unit: any, payloads: {any}, immediate: boolean?): ()
+function Transport.toPlayerPackedMany(
+	lane: Lane,
+	player: Player,
+	id: number,
+	unit: any,
+	payloads: { any },
+	immediate: boolean?
+): ()
 	local packets = getPlayerPacked(targetPackedQueues[lane], assertPlayer(player))
 
 	PackedStore.pushMany(getPacked(packets, id), unit, payloads)
@@ -702,7 +756,13 @@ function Transport.toPlayer(
 	targetFrameDirty[lane] = true
 end
 
-function Transport.toPlayerMany(lane: Lane, player: Player, id: number, payloads: {any}, immediate: boolean?): ()
+function Transport.toPlayerMany(
+	lane: Lane,
+	player: Player,
+	id: number,
+	payloads: { any },
+	immediate: boolean?
+): ()
 	FrameStore.pushManyFor(targetQueues[lane], assertPlayer(player), id, payloads)
 	serverDirty = true
 	targetFrameDirty[lane] = true
@@ -712,12 +772,24 @@ function Transport.toPlayerMany(lane: Lane, player: Player, id: number, payloads
 	end
 end
 
-function Transport.toPlayerPacked(lane: Lane, player: Player, id: number, count: number, payloads: buffer): ()
+function Transport.toPlayerPacked(
+	lane: Lane,
+	player: Player,
+	id: number,
+	count: number,
+	payloads: buffer
+): ()
 	Transport.flush()
 	sendPackedToPlayer(lane, assertPlayer(player), id, count, payloads)
 end
 
-function Transport.toAllPackedOne(lane: Lane, id: number, unit: any, payload: any, immediate: boolean?): ()
+function Transport.toAllPackedOne(
+	lane: Lane,
+	id: number,
+	unit: any,
+	payload: any,
+	immediate: boolean?
+): ()
 	if immediate then
 		flushServerIfDirty()
 		sendPackedOneToAll(lane, id, unit, payload)
@@ -729,7 +801,13 @@ function Transport.toAllPackedOne(lane: Lane, id: number, unit: any, payload: an
 	broadcastPackedDirty[lane] = true
 end
 
-function Transport.toAllPackedMany(lane: Lane, id: number, unit: any, payloads: {any}, immediate: boolean?): ()
+function Transport.toAllPackedMany(
+	lane: Lane,
+	id: number,
+	unit: any,
+	payloads: { any },
+	immediate: boolean?
+): ()
 	PackedStore.pushMany(getPacked(broadcastPackedQueues[lane], id), unit, payloads)
 	serverDirty = true
 	broadcastPackedDirty[lane] = true
@@ -751,7 +829,7 @@ function Transport.toAll(lane: Lane, id: number, payload: any, immediate: boolea
 	broadcastFrameDirty[lane] = true
 end
 
-function Transport.toAllMany(lane: Lane, id: number, payloads: {any}, immediate: boolean?): ()
+function Transport.toAllMany(lane: Lane, id: number, payloads: { any }, immediate: boolean?): ()
 	FrameStore.pushMany(broadcastQueues[lane], id, payloads)
 	serverDirty = true
 	broadcastFrameDirty[lane] = true
@@ -797,7 +875,13 @@ function Transport.syncToPlayer(player: Player, payload: any): ()
 	end
 end
 
-function Transport.toList(lane: Lane, players: {Player}, id: number, payload: any, immediate: boolean?): ()
+function Transport.toList(
+	lane: Lane,
+	players: { Player },
+	id: number,
+	payload: any,
+	immediate: boolean?
+): ()
 	if immediate then
 		flushServerIfDirty()
 
@@ -823,7 +907,13 @@ function Transport.toList(lane: Lane, players: {Player}, id: number, payload: an
 	end
 end
 
-function Transport.toListMany(lane: Lane, players: {Player}, id: number, payloads: {any}, immediate: boolean?): ()
+function Transport.toListMany(
+	lane: Lane,
+	players: { Player },
+	id: number,
+	payloads: { any },
+	immediate: boolean?
+): ()
 	for _, player in ipairs(players) do
 		if typeof(player) == "Instance" and player:IsA("Player") then
 			FrameStore.pushManyFor(targetQueues[lane], player, id, payloads)
@@ -837,7 +927,14 @@ function Transport.toListMany(lane: Lane, players: {Player}, id: number, payload
 	end
 end
 
-function Transport.toListPackedOne(lane: Lane, players: {Player}, id: number, unit: any, payload: any, immediate: boolean?): ()
+function Transport.toListPackedOne(
+	lane: Lane,
+	players: { Player },
+	id: number,
+	unit: any,
+	payload: any,
+	immediate: boolean?
+): ()
 	if immediate then
 		flushServerIfDirty()
 
@@ -852,7 +949,11 @@ function Transport.toListPackedOne(lane: Lane, players: {Player}, id: number, un
 
 	for _, player in ipairs(players) do
 		if typeof(player) == "Instance" and player:IsA("Player") then
-			PackedStore.push(getPacked(getPlayerPacked(targetPackedQueues[lane], player), id), unit, payload)
+			PackedStore.push(
+				getPacked(getPlayerPacked(targetPackedQueues[lane], player), id),
+				unit,
+				payload
+			)
 			serverDirty = true
 			targetPackedDirty[lane] = true
 		end
@@ -863,10 +964,21 @@ function Transport.toListPackedOne(lane: Lane, players: {Player}, id: number, un
 	end
 end
 
-function Transport.toListPackedMany(lane: Lane, players: {Player}, id: number, unit: any, payloads: {any}, immediate: boolean?): ()
+function Transport.toListPackedMany(
+	lane: Lane,
+	players: { Player },
+	id: number,
+	unit: any,
+	payloads: { any },
+	immediate: boolean?
+): ()
 	for _, player in ipairs(players) do
 		if typeof(player) == "Instance" and player:IsA("Player") then
-			PackedStore.pushMany(getPacked(getPlayerPacked(targetPackedQueues[lane], player), id), unit, payloads)
+			PackedStore.pushMany(
+				getPacked(getPlayerPacked(targetPackedQueues[lane], player), id),
+				unit,
+				payloads
+			)
 			serverDirty = true
 			targetPackedDirty[lane] = true
 		end
@@ -877,7 +989,13 @@ function Transport.toListPackedMany(lane: Lane, players: {Player}, id: number, u
 	end
 end
 
-function Transport.toExcept(lane: Lane, except: Player, id: number, payload: any, immediate: boolean?): ()
+function Transport.toExcept(
+	lane: Lane,
+	except: Player,
+	id: number,
+	payload: any,
+	immediate: boolean?
+): ()
 	except = assertPlayer(except)
 
 	if immediate then
@@ -905,7 +1023,13 @@ function Transport.toExcept(lane: Lane, except: Player, id: number, payload: any
 	end
 end
 
-function Transport.toExceptMany(lane: Lane, except: Player, id: number, payloads: {any}, immediate: boolean?): ()
+function Transport.toExceptMany(
+	lane: Lane,
+	except: Player,
+	id: number,
+	payloads: { any },
+	immediate: boolean?
+): ()
 	except = assertPlayer(except)
 
 	for _, player in ipairs(Players:GetPlayers()) do
@@ -921,7 +1045,14 @@ function Transport.toExceptMany(lane: Lane, except: Player, id: number, payloads
 	end
 end
 
-function Transport.toExceptPackedOne(lane: Lane, except: Player, id: number, unit: any, payload: any, immediate: boolean?): ()
+function Transport.toExceptPackedOne(
+	lane: Lane,
+	except: Player,
+	id: number,
+	unit: any,
+	payload: any,
+	immediate: boolean?
+): ()
 	except = assertPlayer(except)
 
 	if immediate then
@@ -938,7 +1069,11 @@ function Transport.toExceptPackedOne(lane: Lane, except: Player, id: number, uni
 
 	for _, player in ipairs(Players:GetPlayers()) do
 		if player ~= except then
-			PackedStore.push(getPacked(getPlayerPacked(targetPackedQueues[lane], player), id), unit, payload)
+			PackedStore.push(
+				getPacked(getPlayerPacked(targetPackedQueues[lane], player), id),
+				unit,
+				payload
+			)
 			serverDirty = true
 			targetPackedDirty[lane] = true
 		end
@@ -949,12 +1084,23 @@ function Transport.toExceptPackedOne(lane: Lane, except: Player, id: number, uni
 	end
 end
 
-function Transport.toExceptPackedMany(lane: Lane, except: Player, id: number, unit: any, payloads: {any}, immediate: boolean?): ()
+function Transport.toExceptPackedMany(
+	lane: Lane,
+	except: Player,
+	id: number,
+	unit: any,
+	payloads: { any },
+	immediate: boolean?
+): ()
 	except = assertPlayer(except)
 
 	for _, player in ipairs(Players:GetPlayers()) do
 		if player ~= except then
-			PackedStore.pushMany(getPacked(getPlayerPacked(targetPackedQueues[lane], player), id), unit, payloads)
+			PackedStore.pushMany(
+				getPacked(getPlayerPacked(targetPackedQueues[lane], player), id),
+				unit,
+				payloads
+			)
 			serverDirty = true
 			targetPackedDirty[lane] = true
 		end
@@ -966,11 +1112,17 @@ function Transport.toExceptPackedMany(lane: Lane, except: Player, id: number, un
 end
 
 if IS_SERVER then
+	-- Named as Lane rather than written as literals at the call site: these
+	-- tables are keyed by the union, and a bare string -- including one read
+	-- out of an array of them -- widens to string and stops matching it.
+	local reliable: Lane = "reliable"
+	local fast: Lane = "fast"
+
 	Players.PlayerRemoving:Connect(function(player: Player)
-		targetQueues.reliable[player] = nil
-		targetQueues.fast[player] = nil
-		targetPackedQueues.reliable[player] = nil
-		targetPackedQueues.fast[player] = nil
+		targetQueues[reliable][player] = nil
+		targetQueues[fast][player] = nil
+		targetPackedQueues[reliable][player] = nil
+		targetPackedQueues[fast][player] = nil
 	end)
 end
 
