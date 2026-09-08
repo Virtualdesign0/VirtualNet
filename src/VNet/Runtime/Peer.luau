@@ -28,6 +28,16 @@ local function receiveRemote(
 		return
 	end
 
+	-- A packed batch arrives as two arguments rather than four: its id and its
+	-- event count are folded into the header. See Protocol for why that is
+	-- worth doing.
+	if typeof(first) == "number" and Protocol.isBatchHeader(first) and third == nil then
+		local id, count, transposed, difference = Protocol.unpackBatch(first)
+
+		Registry.receivePackedBatch(lane, sender, id, count, second, transposed, difference)
+		return
+	end
+
 	if typeof(first) == "number" and third == nil and fourth == nil then
 		if typeof(second) == "buffer" then
 			Registry.receivePackedOne(lane, sender, first, second)
