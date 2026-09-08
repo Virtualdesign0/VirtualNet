@@ -17,23 +17,10 @@ type Unit = {
 local TRUE_VALUE = true
 local FALSE_VALUE = false
 local createArray = (table :: any)["create"]
-local createBuffer = (buffer :: any)["create"]
-local copyBuffer = (buffer :: any)["copy"]
 local makeAngles = (CFrame :: any)["Angles"]
 local makeCFrame = (CFrame :: any)["new"]
 local makeVector3 = (Vector3 :: any)["new"]
-local lenBuffer = (buffer :: any)["len"]
-local readF32 = (buffer :: any)["readf32"]
-local readI16 = (buffer :: any)["readi16"]
-local readString = (buffer :: any)["readstring"]
-local readU8 = (buffer :: any)["readu8"]
-local readU32 = (buffer :: any)["readu32"]
 local setField = rawset
-local writeF32 = (buffer :: any)["writef32"]
-local writeI16 = (buffer :: any)["writei16"]
-local writeString = (buffer :: any)["writestring"]
-local writeU8 = (buffer :: any)["writeu8"]
-local writeU32 = (buffer :: any)["writeu32"]
 local atan2 = math.atan2
 local clamp = math.clamp
 local round = math.round
@@ -58,7 +45,7 @@ local ReadContextLength = 0
 local function ensureReadable(source: buffer, cursor: number, bytes: number): ()
 	if source ~= ReadContextSource then
 		ReadContextSource = source
-		ReadContextLength = lenBuffer(source)
+		ReadContextLength = buffer.len(source)
 	end
 
 	if cursor < 0 or bytes < 0 or cursor + bytes > ReadContextLength then
@@ -77,8 +64,8 @@ local function ensureCapacity(batch: any, needed: number): ()
 		capacity *= 2
 	end
 
-	local data = createBuffer(capacity)
-	copyBuffer(data, 0, batch.data, 0, batch.size)
+	local data = buffer.create(capacity)
+	buffer.copy(data, 0, batch.data, 0, batch.size)
 
 	batch.capacity = capacity
 	batch.data = data
@@ -87,7 +74,7 @@ end
 local function readBoundedU32(source: buffer, cursor: number, limit: number, label: string): number
 	ensureReadable(source, cursor, 4)
 
-	local value = readU32(source, cursor)
+	local value = buffer.readu32(source, cursor)
 
 	if value > limit then
 		failDecode(label .. " length exceeds max")
@@ -106,7 +93,7 @@ local function readBoundedString(source: buffer, cursor: number): (string, numbe
 
 	ensureReadable(source, textCursor, size)
 
-	local value = readString(source, textCursor, size)
+	local value = buffer.readstring(source, textCursor, size)
 
 	return value, textCursor + size
 end
@@ -182,21 +169,21 @@ function Specializations.objectLargeNestedUnit(
 		write = function(target: buffer, cursor: number, value: { [string]: any }): number
 			local first = value[n1]
 
-			writeU32(target, cursor, #first)
+			buffer.writeu32(target, cursor, #first)
 			cursor += 4
 
 			for index = 1, #first do
-				writeU32(target, cursor, first[index])
+				buffer.writeu32(target, cursor, first[index])
 				cursor += 4
 			end
 
 			local second = value[n2]
 
-			writeU32(target, cursor, #second)
+			buffer.writeu32(target, cursor, #second)
 			cursor += 4
 
 			for index = 1, #second do
-				writeU32(target, cursor, second[index])
+				buffer.writeu32(target, cursor, second[index])
 				cursor += 4
 			end
 
@@ -205,9 +192,9 @@ function Specializations.objectLargeNestedUnit(
 			local labelSize = #label
 			local boolCursor = cursor + 4 + labelSize
 
-			writeU32(target, cursor, labelSize)
-			writeString(target, cursor + 4, label, labelSize)
-			writeU8(target, boolCursor, if child[c2] then 1 else 0)
+			buffer.writeu32(target, cursor, labelSize)
+			buffer.writestring(target, cursor + 4, label, labelSize)
+			buffer.writeu8(target, boolCursor, if child[c2] then 1 else 0)
 
 			return boolCursor + 1
 		end,
@@ -217,21 +204,21 @@ function Specializations.objectLargeNestedUnit(
 				local value = values[valueIndex]
 				local first = value[n1]
 
-				writeU32(target, cursor, #first)
+				buffer.writeu32(target, cursor, #first)
 				cursor += 4
 
 				for index = 1, #first do
-					writeU32(target, cursor, first[index])
+					buffer.writeu32(target, cursor, first[index])
 					cursor += 4
 				end
 
 				local second = value[n2]
 
-				writeU32(target, cursor, #second)
+				buffer.writeu32(target, cursor, #second)
 				cursor += 4
 
 				for index = 1, #second do
-					writeU32(target, cursor, second[index])
+					buffer.writeu32(target, cursor, second[index])
 					cursor += 4
 				end
 
@@ -240,9 +227,9 @@ function Specializations.objectLargeNestedUnit(
 				local labelSize = #label
 				local boolCursor = cursor + 4 + labelSize
 
-				writeU32(target, cursor, labelSize)
-				writeString(target, cursor + 4, label, labelSize)
-				writeU8(target, boolCursor, if child[c2] then 1 else 0)
+				buffer.writeu32(target, cursor, labelSize)
+				buffer.writestring(target, cursor + 4, label, labelSize)
+				buffer.writeu8(target, boolCursor, if child[c2] then 1 else 0)
 				cursor = boolCursor + 1
 			end
 
@@ -262,27 +249,27 @@ function Specializations.objectLargeNestedUnit(
 
 			local target = batch.data
 
-			writeU32(target, cursor, #first)
+			buffer.writeu32(target, cursor, #first)
 			cursor += 4
 
 			for index = 1, #first do
-				writeU32(target, cursor, first[index])
+				buffer.writeu32(target, cursor, first[index])
 				cursor += 4
 			end
 
-			writeU32(target, cursor, #second)
+			buffer.writeu32(target, cursor, #second)
 			cursor += 4
 
 			for index = 1, #second do
-				writeU32(target, cursor, second[index])
+				buffer.writeu32(target, cursor, second[index])
 				cursor += 4
 			end
 
 			local boolCursor = cursor + 4 + labelSize
 
-			writeU32(target, cursor, labelSize)
-			writeString(target, cursor + 4, label, labelSize)
-			writeU8(target, boolCursor, if child[c2] then 1 else 0)
+			buffer.writeu32(target, cursor, labelSize)
+			buffer.writestring(target, cursor + 4, label, labelSize)
+			buffer.writeu8(target, boolCursor, if child[c2] then 1 else 0)
 
 			batch.size = needed
 			batch.count += 1
@@ -297,7 +284,7 @@ function Specializations.objectLargeNestedUnit(
 			ensureReadable(source, cursor, firstLength * 4)
 
 			for index = 1, firstLength do
-				local item = readU32(source, cursor)
+				local item = buffer.readu32(source, cursor)
 
 				setField(first, index, item)
 				cursor += 4
@@ -310,7 +297,7 @@ function Specializations.objectLargeNestedUnit(
 			ensureReadable(source, cursor, secondLength * 4)
 
 			for index = 1, secondLength do
-				local item = readU32(source, cursor)
+				local item = buffer.readu32(source, cursor)
 
 				setField(second, index, item)
 				cursor += 4
@@ -324,7 +311,7 @@ function Specializations.objectLargeNestedUnit(
 
 			ensureReadable(source, boolCursor, 1)
 
-			local flagByte = readU8(source, boolCursor)
+			local flagByte = buffer.readu8(source, boolCursor)
 
 			setField(child, c1, label)
 			setBooleanField(child, c2, flagByte)
@@ -391,7 +378,7 @@ function Specializations.objectStateUnit(
 		end,
 
 		write = function(target: buffer, cursor: number, value: { [string]: any }): number
-			writeU32(target, cursor, value[n1])
+			buffer.writeu32(target, cursor, value[n1])
 			cursor += 4
 
 			local lookFrame = value[n2]
@@ -408,27 +395,27 @@ function Specializations.objectStateUnit(
 				local yaw = atan2(-look.X, -look.Z)
 				local qyaw = quantizeYaw(yaw)
 
-				writeI16(target, cursor, qx)
-				writeI16(target, cursor + 2, qy)
-				writeI16(target, cursor + 4, qz)
-				writeU8(target, cursor + 6, qyaw)
+				buffer.writei16(target, cursor, qx)
+				buffer.writei16(target, cursor + 2, qy)
+				buffer.writei16(target, cursor + 4, qz)
+				buffer.writeu8(target, cursor + 6, qyaw)
 				cursor += 7
 			else
 				local x, y, z, r00, r01, r02, r10, r11, r12, r20, r21, r22 =
 					lookFrame:GetComponents()
 
-				writeF32(target, cursor, x)
-				writeF32(target, cursor + 4, y)
-				writeF32(target, cursor + 8, z)
-				writeF32(target, cursor + 12, r00)
-				writeF32(target, cursor + 16, r01)
-				writeF32(target, cursor + 20, r02)
-				writeF32(target, cursor + 24, r10)
-				writeF32(target, cursor + 28, r11)
-				writeF32(target, cursor + 32, r12)
-				writeF32(target, cursor + 36, r20)
-				writeF32(target, cursor + 40, r21)
-				writeF32(target, cursor + 44, r22)
+				buffer.writef32(target, cursor, x)
+				buffer.writef32(target, cursor + 4, y)
+				buffer.writef32(target, cursor + 8, z)
+				buffer.writef32(target, cursor + 12, r00)
+				buffer.writef32(target, cursor + 16, r01)
+				buffer.writef32(target, cursor + 20, r02)
+				buffer.writef32(target, cursor + 24, r10)
+				buffer.writef32(target, cursor + 28, r11)
+				buffer.writef32(target, cursor + 32, r12)
+				buffer.writef32(target, cursor + 36, r20)
+				buffer.writef32(target, cursor + 40, r21)
+				buffer.writef32(target, cursor + 44, r22)
 				cursor += 48
 			end
 
@@ -444,32 +431,32 @@ function Specializations.objectStateUnit(
 				local qy = clamp(sy, MIN_I16, MAX_I16)
 				local qz = clamp(sz, MIN_I16, MAX_I16)
 
-				writeI16(target, cursor, qx)
-				writeI16(target, cursor + 2, qy)
-				writeI16(target, cursor + 4, qz)
+				buffer.writei16(target, cursor, qx)
+				buffer.writei16(target, cursor + 2, qy)
+				buffer.writei16(target, cursor + 4, qz)
 				cursor += 6
 			else
-				writeF32(target, cursor, position.X)
-				writeF32(target, cursor + 4, position.Y)
-				writeF32(target, cursor + 8, position.Z)
+				buffer.writef32(target, cursor, position.X)
+				buffer.writef32(target, cursor + 4, position.Y)
+				buffer.writef32(target, cursor + 8, position.Z)
 				cursor += 12
 			end
 
 			local samples = value[n5]
 
-			writeU32(target, cursor, #samples)
+			buffer.writeu32(target, cursor, #samples)
 			cursor += 4
 
 			for sampleIndex = 1, #samples do
-				writeU32(target, cursor, samples[sampleIndex])
+				buffer.writeu32(target, cursor, samples[sampleIndex])
 				cursor += 4
 			end
 
 			local text = value[n6]
 			local textSize = #text
 
-			writeU32(target, cursor, textSize)
-			writeString(target, cursor + 4, text, textSize)
+			buffer.writeu32(target, cursor, textSize)
+			buffer.writestring(target, cursor + 4, text, textSize)
 
 			return cursor + 4 + textSize
 		end,
@@ -478,7 +465,7 @@ function Specializations.objectStateUnit(
 			for index = 1, #values do
 				local value = values[index]
 
-				writeU32(target, cursor, value[n1])
+				buffer.writeu32(target, cursor, value[n1])
 				cursor += 4
 
 				local lookFrame = value[n2]
@@ -495,27 +482,27 @@ function Specializations.objectStateUnit(
 					local yaw = atan2(-look.X, -look.Z)
 					local qyaw = quantizeYaw(yaw)
 
-					writeI16(target, cursor, qx)
-					writeI16(target, cursor + 2, qy)
-					writeI16(target, cursor + 4, qz)
-					writeU8(target, cursor + 6, qyaw)
+					buffer.writei16(target, cursor, qx)
+					buffer.writei16(target, cursor + 2, qy)
+					buffer.writei16(target, cursor + 4, qz)
+					buffer.writeu8(target, cursor + 6, qyaw)
 					cursor += 7
 				else
 					local x, y, z, r00, r01, r02, r10, r11, r12, r20, r21, r22 =
 						lookFrame:GetComponents()
 
-					writeF32(target, cursor, x)
-					writeF32(target, cursor + 4, y)
-					writeF32(target, cursor + 8, z)
-					writeF32(target, cursor + 12, r00)
-					writeF32(target, cursor + 16, r01)
-					writeF32(target, cursor + 20, r02)
-					writeF32(target, cursor + 24, r10)
-					writeF32(target, cursor + 28, r11)
-					writeF32(target, cursor + 32, r12)
-					writeF32(target, cursor + 36, r20)
-					writeF32(target, cursor + 40, r21)
-					writeF32(target, cursor + 44, r22)
+					buffer.writef32(target, cursor, x)
+					buffer.writef32(target, cursor + 4, y)
+					buffer.writef32(target, cursor + 8, z)
+					buffer.writef32(target, cursor + 12, r00)
+					buffer.writef32(target, cursor + 16, r01)
+					buffer.writef32(target, cursor + 20, r02)
+					buffer.writef32(target, cursor + 24, r10)
+					buffer.writef32(target, cursor + 28, r11)
+					buffer.writef32(target, cursor + 32, r12)
+					buffer.writef32(target, cursor + 36, r20)
+					buffer.writef32(target, cursor + 40, r21)
+					buffer.writef32(target, cursor + 44, r22)
 					cursor += 48
 				end
 
@@ -531,32 +518,32 @@ function Specializations.objectStateUnit(
 					local qy = clamp(sy, MIN_I16, MAX_I16)
 					local qz = clamp(sz, MIN_I16, MAX_I16)
 
-					writeI16(target, cursor, qx)
-					writeI16(target, cursor + 2, qy)
-					writeI16(target, cursor + 4, qz)
+					buffer.writei16(target, cursor, qx)
+					buffer.writei16(target, cursor + 2, qy)
+					buffer.writei16(target, cursor + 4, qz)
 					cursor += 6
 				else
-					writeF32(target, cursor, position.X)
-					writeF32(target, cursor + 4, position.Y)
-					writeF32(target, cursor + 8, position.Z)
+					buffer.writef32(target, cursor, position.X)
+					buffer.writef32(target, cursor + 4, position.Y)
+					buffer.writef32(target, cursor + 8, position.Z)
 					cursor += 12
 				end
 
 				local samples = value[n5]
 
-				writeU32(target, cursor, #samples)
+				buffer.writeu32(target, cursor, #samples)
 				cursor += 4
 
 				for sampleIndex = 1, #samples do
-					writeU32(target, cursor, samples[sampleIndex])
+					buffer.writeu32(target, cursor, samples[sampleIndex])
 					cursor += 4
 				end
 
 				local text = value[n6]
 				local textSize = #text
 
-				writeU32(target, cursor, textSize)
-				writeString(target, cursor + 4, text, textSize)
+				buffer.writeu32(target, cursor, textSize)
+				buffer.writestring(target, cursor + 4, text, textSize)
 				cursor += 4 + textSize
 			end
 
@@ -574,7 +561,7 @@ function Specializations.objectStateUnit(
 
 			local target = batch.data
 
-			writeU32(target, cursor, value[n1])
+			buffer.writeu32(target, cursor, value[n1])
 			cursor += 4
 
 			local lookFrame = value[n2]
@@ -591,27 +578,27 @@ function Specializations.objectStateUnit(
 				local yaw = atan2(-look.X, -look.Z)
 				local qyaw = quantizeYaw(yaw)
 
-				writeI16(target, cursor, qx)
-				writeI16(target, cursor + 2, qy)
-				writeI16(target, cursor + 4, qz)
-				writeU8(target, cursor + 6, qyaw)
+				buffer.writei16(target, cursor, qx)
+				buffer.writei16(target, cursor + 2, qy)
+				buffer.writei16(target, cursor + 4, qz)
+				buffer.writeu8(target, cursor + 6, qyaw)
 				cursor += 7
 			else
 				local x, y, z, r00, r01, r02, r10, r11, r12, r20, r21, r22 =
 					lookFrame:GetComponents()
 
-				writeF32(target, cursor, x)
-				writeF32(target, cursor + 4, y)
-				writeF32(target, cursor + 8, z)
-				writeF32(target, cursor + 12, r00)
-				writeF32(target, cursor + 16, r01)
-				writeF32(target, cursor + 20, r02)
-				writeF32(target, cursor + 24, r10)
-				writeF32(target, cursor + 28, r11)
-				writeF32(target, cursor + 32, r12)
-				writeF32(target, cursor + 36, r20)
-				writeF32(target, cursor + 40, r21)
-				writeF32(target, cursor + 44, r22)
+				buffer.writef32(target, cursor, x)
+				buffer.writef32(target, cursor + 4, y)
+				buffer.writef32(target, cursor + 8, z)
+				buffer.writef32(target, cursor + 12, r00)
+				buffer.writef32(target, cursor + 16, r01)
+				buffer.writef32(target, cursor + 20, r02)
+				buffer.writef32(target, cursor + 24, r10)
+				buffer.writef32(target, cursor + 28, r11)
+				buffer.writef32(target, cursor + 32, r12)
+				buffer.writef32(target, cursor + 36, r20)
+				buffer.writef32(target, cursor + 40, r21)
+				buffer.writef32(target, cursor + 44, r22)
 				cursor += 48
 			end
 
@@ -627,29 +614,29 @@ function Specializations.objectStateUnit(
 				local qy = clamp(sy, MIN_I16, MAX_I16)
 				local qz = clamp(sz, MIN_I16, MAX_I16)
 
-				writeI16(target, cursor, qx)
-				writeI16(target, cursor + 2, qy)
-				writeI16(target, cursor + 4, qz)
+				buffer.writei16(target, cursor, qx)
+				buffer.writei16(target, cursor + 2, qy)
+				buffer.writei16(target, cursor + 4, qz)
 				cursor += 6
 			else
-				writeF32(target, cursor, position.X)
-				writeF32(target, cursor + 4, position.Y)
-				writeF32(target, cursor + 8, position.Z)
+				buffer.writef32(target, cursor, position.X)
+				buffer.writef32(target, cursor + 4, position.Y)
+				buffer.writef32(target, cursor + 8, position.Z)
 				cursor += 12
 			end
 
-			writeU32(target, cursor, #samples)
+			buffer.writeu32(target, cursor, #samples)
 			cursor += 4
 
 			for sampleIndex = 1, #samples do
-				writeU32(target, cursor, samples[sampleIndex])
+				buffer.writeu32(target, cursor, samples[sampleIndex])
 				cursor += 4
 			end
 
 			local textSize = #text
 
-			writeU32(target, cursor, textSize)
-			writeString(target, cursor + 4, text, textSize)
+			buffer.writeu32(target, cursor, textSize)
+			buffer.writestring(target, cursor + 4, text, textSize)
 
 			batch.size = needed
 			batch.count += 1
@@ -659,7 +646,7 @@ function Specializations.objectStateUnit(
 			local value = {}
 			ensureReadable(source, cursor, 4)
 
-			local stateValue = readU32(source, cursor)
+			local stateValue = buffer.readu32(source, cursor)
 
 			setField(value, n1, stateValue)
 			cursor += 4
@@ -669,10 +656,10 @@ function Specializations.objectStateUnit(
 			if useQuantizedLook then
 				ensureReadable(source, cursor, 7)
 
-				local qx = readI16(source, cursor)
-				local qy = readI16(source, cursor + 2)
-				local qz = readI16(source, cursor + 4)
-				local qyaw = readU8(source, cursor + 6)
+				local qx = buffer.readi16(source, cursor)
+				local qy = buffer.readi16(source, cursor + 2)
+				local qz = buffer.readi16(source, cursor + 4)
+				local qyaw = buffer.readu8(source, cursor + 6)
 				local x = qx * inverseLookScale
 				local y = qy * inverseLookScale
 				local z = qz * inverseLookScale
@@ -683,18 +670,18 @@ function Specializations.objectStateUnit(
 			else
 				ensureReadable(source, cursor, 48)
 
-				local x = readF32(source, cursor)
-				local y = readF32(source, cursor + 4)
-				local z = readF32(source, cursor + 8)
-				local r00 = readF32(source, cursor + 12)
-				local r01 = readF32(source, cursor + 16)
-				local r02 = readF32(source, cursor + 20)
-				local r10 = readF32(source, cursor + 24)
-				local r11 = readF32(source, cursor + 28)
-				local r12 = readF32(source, cursor + 32)
-				local r20 = readF32(source, cursor + 36)
-				local r21 = readF32(source, cursor + 40)
-				local r22 = readF32(source, cursor + 44)
+				local x = buffer.readf32(source, cursor)
+				local y = buffer.readf32(source, cursor + 4)
+				local z = buffer.readf32(source, cursor + 8)
+				local r00 = buffer.readf32(source, cursor + 12)
+				local r01 = buffer.readf32(source, cursor + 16)
+				local r02 = buffer.readf32(source, cursor + 20)
+				local r10 = buffer.readf32(source, cursor + 24)
+				local r11 = buffer.readf32(source, cursor + 28)
+				local r12 = buffer.readf32(source, cursor + 32)
+				local r20 = buffer.readf32(source, cursor + 36)
+				local r21 = buffer.readf32(source, cursor + 40)
+				local r22 = buffer.readf32(source, cursor + 44)
 
 				frame = makeCFrame(x, y, z, r00, r01, r02, r10, r11, r12, r20, r21, r22)
 				cursor += 48
@@ -712,9 +699,9 @@ function Specializations.objectStateUnit(
 			if useQuantizedPosition then
 				ensureReadable(source, cursor, 6)
 
-				local qx = readI16(source, cursor)
-				local qy = readI16(source, cursor + 2)
-				local qz = readI16(source, cursor + 4)
+				local qx = buffer.readi16(source, cursor)
+				local qy = buffer.readi16(source, cursor + 2)
+				local qz = buffer.readi16(source, cursor + 4)
 				local px = qx * inversePositionScale
 				local py = qy * inversePositionScale
 				local pz = qz * inversePositionScale
@@ -724,9 +711,9 @@ function Specializations.objectStateUnit(
 			else
 				ensureReadable(source, cursor, 12)
 
-				local px = readF32(source, cursor)
-				local py = readF32(source, cursor + 4)
-				local pz = readF32(source, cursor + 8)
+				local px = buffer.readf32(source, cursor)
+				local py = buffer.readf32(source, cursor + 4)
+				local pz = buffer.readf32(source, cursor + 8)
 
 				position = makeVector3(px, py, pz)
 				cursor += 12
@@ -741,7 +728,7 @@ function Specializations.objectStateUnit(
 			ensureReadable(source, cursor, samplesLength * 4)
 
 			for sampleIndex = 1, samplesLength do
-				local sampleValue = readU32(source, cursor)
+				local sampleValue = buffer.readu32(source, cursor)
 
 				setField(samples, sampleIndex, sampleValue)
 				cursor += 4
