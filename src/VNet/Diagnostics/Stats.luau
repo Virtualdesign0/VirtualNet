@@ -4,7 +4,7 @@ local Config = require(script.Parent.Parent.Runtime.Config)
 
 local Stats = {}
 
-local counters: {[string]: number} = {
+local counters: { [string]: number } = {
 	sentPackets = 0,
 	receivedPackets = 0,
 	sentBatches = 0,
