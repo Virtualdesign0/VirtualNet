@@ -7,7 +7,7 @@ local Config = {
 	promise = nil :: any,
 }
 
-function Config.apply(options: {[string]: any}?): ()
+function Config.apply(options: { [string]: any }?): ()
 	if not options then
 		return
 	end
