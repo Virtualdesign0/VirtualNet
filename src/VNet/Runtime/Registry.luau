@@ -4,6 +4,8 @@ local RunService = game:GetService("RunService")
 
 local Signal = require(script.Parent.Parent.Signals.Signal)
 local Stats = require(script.Parent.Parent.Diagnostics.Stats)
+local Delta = require(script.Parent.Parent.Wire.Delta)
+local Transpose = require(script.Parent.Parent.Wire.Transpose)
 local Config = require(script.Parent.Config)
 local JoinSync = require(script.Parent.JoinSync)
 local Policy = require(script.Parent.Policy)
@@ -30,6 +32,8 @@ type PacketState = {
 	rejectSignal: any,
 	defer: boolean,
 	delta: boolean,
+	--- Whether this packet.s broadcasts go out as differences. See Wire.Delta.
+	frameDelta: boolean,
 	direct: boolean,
 	validate: boolean,
 	empty: boolean,
@@ -62,7 +66,6 @@ local MAX_BATCH_COUNT = 65535
 local typeOf = typeof
 local toString = tostring
 local createArray = (table :: any)["create"]
-local bufferLen = (buffer :: any)["len"]
 local getField = rawget
 local IS_SERVER = RunService:IsServer()
 
@@ -516,7 +519,7 @@ local function dispatchPackedCountOnly(
 	end
 
 	local expectedBytes = (fixedSize :: number) * count
-	local actualBytes = bufferLen(payloads)
+	local actualBytes = buffer.len(payloads)
 
 	if actualBytes ~= expectedBytes then
 		error(
@@ -683,6 +686,82 @@ local function dispatchPacked(
 
 		packedReader.finish(payloads, cursor)
 	end
+end
+
+--[[
+	The last body received for each packet that sends differences.
+
+	The sender keeps the same buffer and the two stay in step as long as every
+	frame arrives, in order, exactly once -- which is the reliable lane's
+	promise and the reason differences are refused anywhere else.
+
+	It holds the transposed form when the packet transposes, because the sender
+	subtracts after transposing and the receiver therefore adds back before
+	undoing it.
+]]
+local frameDeltaPrevious: { [number]: buffer } = {}
+local frameDeltaScratch = buffer.create(0)
+
+--- Adds a difference back onto the frame it was taken from, or nil when there
+--- is nothing to add it to.
+local function undifference(id: number, payloads: buffer): buffer?
+	local previous = frameDeltaPrevious[id]
+	local length = buffer.len(payloads)
+
+	if previous == nil or buffer.len(previous) ~= length then
+		return nil
+	end
+
+	if buffer.len(frameDeltaScratch) ~= length then
+		frameDeltaScratch = buffer.create(length)
+	end
+
+	Delta.apply(frameDeltaScratch, payloads, previous, length)
+	buffer.copy(previous, 0, frameDeltaScratch, 0, length)
+
+	return frameDeltaScratch
+end
+
+--- Remembers a whole frame as the one the next difference is against.
+local function rememberFrame(id: number, payloads: buffer): ()
+	local length = buffer.len(payloads)
+	local previous = frameDeltaPrevious[id]
+
+	if previous == nil or buffer.len(previous) ~= length then
+		previous = buffer.create(length)
+		frameDeltaPrevious[id] = previous
+	end
+
+	buffer.copy(previous, 0, payloads, 0, length)
+end
+
+--[[
+	Undoes the transposition a batch may have arrived in.
+
+	The stride is not sent: the body is the same length either way, every event
+	in it is the same size -- that is the condition the sender transposes under
+	-- so it is the length over the count. A body that does not divide evenly
+	was not produced by this library and is dropped.
+
+	One scratch buffer, reallocated when the length changes, on the same terms
+	as the sender's.
+]]
+local untransposeScratch = buffer.create(0)
+
+local function untranspose(payloads: buffer, count: number): buffer?
+	local length = buffer.len(payloads)
+
+	if count < 2 or length == 0 or length % count ~= 0 then
+		return nil
+	end
+
+	if buffer.len(untransposeScratch) ~= length then
+		untransposeScratch = buffer.create(length)
+	end
+
+	Transpose.unpack(payloads, untransposeScratch, length // count, count)
+
+	return untransposeScratch
 end
 
 local function receiveControl(sender: Player?, payload: any): ()
@@ -1637,6 +1716,8 @@ function Registry.define(name: string, config: { [string]: any })
 		rejectSignal = Signal.new(config.defer == true),
 		defer = config.defer == true,
 		delta = config.delta == true,
+		frameDelta = config.frameDelta == true,
+		transpose = config.transpose == true,
 		direct = direct,
 		validate = schemaValidate,
 		immediate = config.immediate == true,
@@ -1652,6 +1733,9 @@ function Registry.define(name: string, config: { [string]: any })
 	}
 
 	state.empty = state.guardKind == "none"
+
+	Transport.setTranspose(id, state.transpose)
+	Transport.setFrameDelta(id, state.frameDelta)
 	state.api = makePacket(state)
 	packetsByName[name] = state
 	packetsById[id] = state
@@ -1689,7 +1773,7 @@ function Registry.receivePackedOne(lane: Lane, sender: Player?, id: any, payload
 	end
 
 	if Config.stats then
-		local bytes = bufferLen(payloads)
+		local bytes = buffer.len(payloads)
 
 		Stats.bump("receivedPackets")
 		Stats.bump("receivedDirectPackets")
@@ -1708,7 +1792,7 @@ function Registry.receivePackedOne(lane: Lane, sender: Player?, id: any, payload
 	then
 		local fixedSize = getField(state.codec, "size")
 
-		if typeOf(fixedSize) == "number" and bufferLen(payloads) == fixedSize then
+		if typeOf(fixedSize) == "number" and buffer.len(payloads) == fixedSize then
 			dispatchBatchCount(state, sender, 1)
 			return
 		end
@@ -1719,6 +1803,104 @@ function Registry.receivePackedOne(lane: Lane, sender: Player?, id: any, payload
 	if not ok then
 		Stats.bump("droppedPackets")
 		Stats.warn("[VNet]: Dropped malformed direct packed packet: " .. tostring(message))
+	end
+end
+
+--[[
+	One packed batch, however it arrived.
+
+	The wire hands this two arguments -- a header carrying the packet id and
+	the event count, then the buffer -- and `receiveBatch` still routes the
+	older four-argument shape here as well, so both spellings land in the same
+	validation and the same dispatch.
+]]
+function Registry.receivePackedBatch(
+	lane: Lane,
+	sender: Player?,
+	id: any,
+	count: any,
+	payloads: any,
+	--- True when the body arrived transposed. See Wire.Transpose.
+	transposed: boolean?,
+	--- True when the body is a difference against the last frame. See Wire.Delta.
+	difference: boolean?
+): ()
+	if
+		typeOf(count) ~= "number"
+		or count < 0
+		or count % 1 ~= 0
+		or count > MAX_BATCH_COUNT
+		or typeOf(id) ~= "number"
+		or typeOf(payloads) ~= "buffer"
+	then
+		Stats.bump("droppedPackets")
+		Stats.warn("[VNet]: Dropped invalid packed batch.")
+		return
+	end
+
+	local state = packetsById[id]
+
+	if not state or not state.codec then
+		Stats.bump("droppedPackets")
+		Stats.warn("[VNet]: Dropped invalid packed batch.")
+		return
+	end
+
+	if state.lane ~= lane then
+		Stats.bump("droppedPackets")
+		Stats.warn(`[VNet]: Dropped "{state.name}": arrived on {lane} lane.`)
+		return
+	end
+
+	if Config.stats then
+		local bytes = buffer.len(payloads)
+
+		Stats.bump("receivedBatches")
+		Stats.bump("receivedPackets", count)
+		Stats.bump("receivedPackedBatches")
+		Stats.bump("receivedBytes", bytes)
+		Stats.bump("receivedPackedBytes", bytes)
+	end
+
+	local body = payloads
+
+	--[[
+		Added back before the transposition is undone, because the sender did
+		them the other way round: transpose, then subtract.
+	]]
+	if difference then
+		local whole = undifference(id, payloads)
+
+		if whole == nil then
+			Stats.bump("droppedPackets")
+			Stats.warn(`[VNet]: Dropped "{state.name}": a difference with no frame to add it to.`)
+			return
+		end
+
+		body = whole
+	elseif state.frameDelta then
+		rememberFrame(id, payloads)
+	end
+
+	if transposed then
+		local restored = untranspose(body, count)
+
+		if restored == nil then
+			Stats.bump("droppedPackets")
+			Stats.warn(
+				`[VNet]: Dropped "{state.name}": transposed body does not divide by its count.`
+			)
+			return
+		end
+
+		body = restored
+	end
+
+	local ok, message = guardedDispatch(dispatchPacked, state, sender, count, body)
+
+	if not ok then
+		Stats.bump("droppedPackets")
+		Stats.warn("[VNet]: Dropped malformed packed batch: " .. tostring(message))
 	end
 end
 
@@ -1743,51 +1925,16 @@ function Registry.receiveBatch(
 		return
 	end
 
-	if Config.stats then
+	-- The packed case counts itself in receivePackedBatch, which is also the
+	-- entry point the two-argument wire shape arrives through.
+	if Config.stats and packed ~= true then
 		Stats.bump("receivedBatches")
 		Stats.bump("receivedPackets", count)
-
-		if packed == true then
-			Stats.bump("receivedPackedBatches")
-
-			if typeOf(payloads) == "buffer" then
-				local bytes = bufferLen(payloads)
-
-				Stats.bump("receivedBytes", bytes)
-				Stats.bump("receivedPackedBytes", bytes)
-			end
-		else
-			Stats.bump("receivedFrameBatches")
-		end
+		Stats.bump("receivedFrameBatches")
 	end
 
 	if packed == true then
-		local state = packetsById[ids]
-
-		if
-			typeOf(ids) ~= "number"
-			or not state
-			or not state.codec
-			or typeOf(payloads) ~= "buffer"
-		then
-			Stats.bump("droppedPackets")
-			Stats.warn("[VNet]: Dropped invalid packed batch.")
-			return
-		end
-
-		if state.lane ~= lane then
-			Stats.bump("droppedPackets")
-			Stats.warn(`[VNet]: Dropped "{state.name}": arrived on {lane} lane.`)
-			return
-		end
-
-		local ok, message = guardedDispatch(dispatchPacked, state, sender, count, payloads)
-
-		if not ok then
-			Stats.bump("droppedPackets")
-			Stats.warn("[VNet]: Dropped malformed packed batch: " .. tostring(message))
-		end
-
+		Registry.receivePackedBatch(lane, sender, ids, count, payloads)
 		return
 	end
 
