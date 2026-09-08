@@ -314,6 +314,79 @@ local function shouldAuditBuild(options: AuditOptions?): boolean
 	return false
 end
 
+--[[
+	Keys that only ever appear on a packet configuration, never on a payload
+	shape.
+
+	A configuration is recognised by a marker `Network.with` stamps on it. A
+	table written by hand with the right keys and no marker is treated as a
+	shape instead, and every one of these keys then fails to resolve as a type
+	-- somewhere deep in the resolver, with a message about the value rather
+	than about what went wrong. See `describeShapeFailure`.
+]]
+local CONFIG_KEYS = {
+	"payload",
+	"value",
+	"reliable",
+	"unreliable",
+	"fast",
+	"lane",
+	"immediate",
+	"defer",
+	"delta",
+	"transpose",
+	"direct",
+	"thin",
+	"raw",
+	"queueEarly",
+	"transaction",
+	"dedupe",
+	"transactionKey",
+	"idempotencyKey",
+	"validate",
+	"id",
+}
+
+--[[
+	Turns a resolver failure into something that names the likely cause.
+
+	This is the error a first-time user of any packet option gets, because the
+	obvious thing to write is the configuration inline:
+
+		Shots = { payload = Shot, transpose = true }
+
+	which is a shape as far as this code can tell, and `transpose = true` is
+	then a boolean where a type name should be. The resolver says so
+	accurately and unhelpfully. If the table carries keys that only make sense
+	on a configuration, the message says which, and what to write instead.
+]]
+local function describeShapeFailure(name: string, value: any, reason: string): string
+	if typeof(value) ~= "table" then
+		return reason
+	end
+
+	local found = {}
+
+	for _, key in CONFIG_KEYS do
+		if rawget(value, key) ~= nil then
+			table.insert(found, key)
+		end
+	end
+
+	if #found == 0 then
+		return reason
+	end
+
+	return string.format(
+		'%s\n[VNet]: "%s" looks like a packet configuration rather than a payload shape -- it '
+			.. "has %s. A configuration has to be wrapped so it can be told apart from a shape: "
+			.. "VNet.with(payload, options).",
+		reason,
+		name,
+		table.concat(found, ", ")
+	)
+end
+
 local function defineNode(result: { [string]: any }, prefix: string?, schema: { [string]: any }): ()
 	local keys = sortedSchemaKeys(schema)
 
@@ -338,9 +411,13 @@ local function defineNode(result: { [string]: any }, prefix: string?, schema: { 
 				result[key] = Registry.define(config.name or name, config)
 			end
 		else
-			result[key] = Registry.define(name, {
-				payload = value,
-			})
+			local ok, defined = pcall(Registry.define, name, { payload = value })
+
+			if not ok then
+				error(describeShapeFailure(name, value, tostring(defined)), 3)
+			end
+
+			result[key] = defined
 		end
 	end
 end
