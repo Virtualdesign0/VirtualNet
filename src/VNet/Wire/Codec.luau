@@ -8,21 +8,25 @@ local CodecState: any = {
 	objectUnit = nil,
 }
 
+-- Read-only because the codec only ever reads a guard: it compiles one into a
+-- unit and never writes to it. Saying so is also what lets a Schema TypeGuard
+-- -- whose `check` is not optional -- be passed straight in, since a
+-- read-write field of an optional type would have to match exactly.
 type Guard = {
-	kind: string,
-	check: ((value: any) -> boolean)?,
-	shape: { [string]: Guard }?,
-	order: { string }?,
-	item: Guard?,
-	items: { Guard }?,
-	key: Guard?,
-	value: Guard?,
-	values: { any }?,
-	lookup: { [any]: number }?,
-	minLength: number?,
-	maxLength: number?,
-	scale: number?,
-	refKind: string?,
+	read kind: string,
+	read check: ((value: any) -> boolean)?,
+	read shape: { [string]: Guard }?,
+	read order: { string }?,
+	read item: Guard?,
+	read items: { Guard }?,
+	read key: Guard?,
+	read value: Guard?,
+	read values: { any }?,
+	read lookup: { [any]: number }?,
+	read minLength: number?,
+	read maxLength: number?,
+	read scale: number?,
+	read refKind: string?,
 }
 
 type Unit = {
@@ -46,21 +50,41 @@ type Unit = {
 local NIL_UNIT: any = {}
 local compiledCache: { [Guard]: any } = setmetatable({}, { __mode = "k" }) :: any
 
+--[[
+	Buffer calls are written out by name.
+
+	`local readU32 = buffer.readu32` is the usual Lua idiom -- a local beats a
+	global lookup -- and in Luau it is backwards for these. The compiler turns
+	`buffer.readu32(...)` written literally into a fastcall, with no call frame
+	and no lookup; through a local it becomes an ordinary call to a C function.
+	Measured over two million iterations, the local costs 1.72x on readu32 and
+	1.97x on writef32.
+
+	Converting the four hundred odd call sites in this file and its
+	specialisations roughly halved the codec: the Vectors row went from 875 to
+	422 microseconds a frame to encode and 969 to 501 to decode, and Booleans
+	and Entities moved with it. Strings did not, because its cost is in the
+	string operations rather than the buffer ones.
+
+	The aliases below still exist because some units are built by handing the
+	function itself to `fixed(size, write, read)`, which cannot be a fastcall
+	whatever it is called. Only the direct call sites were converted.
+
+	This does not hold for `math`: the same measurement put `math.floor`
+	through a local at 1.00x, so the math aliases below stay as they are.
+]]
+
 local TRUE_VALUE = true
 local FALSE_VALUE = false
 local createArray = (table :: any)["create"]
-local createBuffer = (buffer :: any)["create"]
-local copyBuffer = (buffer :: any)["copy"]
 local makeCFrame = (CFrame :: any)["new"]
 local makeAngles = (CFrame :: any)["Angles"]
 local makeVector3 = (Vector3 :: any)["new"]
-local lenBuffer = (buffer :: any)["len"]
 local readI8 = (buffer :: any)["readi8"]
 local readI16 = (buffer :: any)["readi16"]
 local readI32 = (buffer :: any)["readi32"]
 local readU8 = (buffer :: any)["readu8"]
 local readU16 = (buffer :: any)["readu16"]
-local readString = (buffer :: any)["readstring"]
 local readU32 = (buffer :: any)["readu32"]
 local readF32 = (buffer :: any)["readf32"]
 local readF64 = (buffer :: any)["readf64"]
@@ -69,7 +93,6 @@ local setField = rawset
 local writeI8 = (buffer :: any)["writei8"]
 local writeI16 = (buffer :: any)["writei16"]
 local writeI32 = (buffer :: any)["writei32"]
-local writeString = (buffer :: any)["writestring"]
 local writeU8 = (buffer :: any)["writeu8"]
 local writeU16 = (buffer :: any)["writeu16"]
 local writeU32 = (buffer :: any)["writeu32"]
@@ -119,8 +142,8 @@ local function ensureCapacity(batch: any, needed: number): ()
 		capacity *= 2
 	end
 
-	local data = createBuffer(capacity)
-	copyBuffer(data, 0, batch.data, 0, batch.size)
+	local data = buffer.create(capacity)
+	buffer.copy(data, 0, batch.data, 0, batch.size)
 
 	batch.capacity = capacity
 	batch.data = data
@@ -136,7 +159,7 @@ local ReadContextLength = 0
 local function ensureReadable(source: buffer, cursor: number, bytes: number): ()
 	if source ~= ReadContextSource then
 		ReadContextSource = source
-		ReadContextLength = lenBuffer(source)
+		ReadContextLength = buffer.len(source)
 	end
 
 	if cursor < 0 or bytes < 0 or cursor + bytes > ReadContextLength then
@@ -146,7 +169,7 @@ end
 
 local function ensurePacketSize(source: buffer): ()
 	ReadContextSource = source
-	ReadContextLength = lenBuffer(source)
+	ReadContextLength = buffer.len(source)
 
 	if ReadContextLength > MAX_PACKET_SIZE then
 		failDecode("packet exceeds max size")
@@ -156,7 +179,7 @@ end
 local function expectConsumed(source: buffer, cursor: number): ()
 	if source ~= ReadContextSource then
 		ReadContextSource = source
-		ReadContextLength = lenBuffer(source)
+		ReadContextLength = buffer.len(source)
 	end
 
 	if cursor ~= ReadContextLength then
@@ -167,7 +190,7 @@ end
 local function readBoundedU32(source: buffer, cursor: number, limit: number, label: string): number
 	ensureReadable(source, cursor, 4)
 
-	local value = readU32(source, cursor)
+	local value = buffer.readu32(source, cursor)
 
 	if value > limit then
 		failDecode(label .. " length exceeds max")
@@ -325,7 +348,7 @@ local function readBoundedString(source: buffer, cursor: number): (string, numbe
 
 	ensureReadable(source, textCursor, size)
 
-	local value = readString(source, textCursor, size)
+	local value = buffer.readstring(source, textCursor, size)
 
 	return value, textCursor + size
 end
@@ -335,12 +358,12 @@ local function writeU24Value(target: buffer, cursor: number, value: number): ()
 	local low = quantized % 65536
 	local high = floor(quantized / 65536)
 
-	writeU16(target, cursor, low)
-	writeU8(target, cursor + 2, high)
+	buffer.writeu16(target, cursor, low)
+	buffer.writeu8(target, cursor + 2, high)
 end
 
 local function readU24Value(source: buffer, cursor: number): number
-	return readU16(source, cursor) + readU8(source, cursor + 2) * 65536
+	return buffer.readu16(source, cursor) + buffer.readu8(source, cursor + 2) * 65536
 end
 
 local function writeI24Value(target: buffer, cursor: number, value: number): ()
@@ -440,11 +463,15 @@ local function decodeFloatBits(
 end
 
 local function writeF16Value(target: buffer, cursor: number, value: number): ()
-	writeU16(target, cursor, encodeFloatBits(value, F16_MANTISSA_STEPS, 15, 31, F16_MAX_FINITE))
+	buffer.writeu16(
+		target,
+		cursor,
+		encodeFloatBits(value, F16_MANTISSA_STEPS, 15, 31, F16_MAX_FINITE)
+	)
 end
 
 local function readF16Value(source: buffer, cursor: number): number
-	return decodeFloatBits(readU16(source, cursor), F16_MANTISSA_STEPS, 15, 31)
+	return decodeFloatBits(buffer.readu16(source, cursor), F16_MANTISSA_STEPS, 15, 31)
 end
 
 local function writeF24Value(target: buffer, cursor: number, value: number): ()
@@ -617,9 +644,9 @@ local function qvec3I16Unit(scale: number): Unit
 			local qy = clamp(sy, MIN_I16, MAX_I16)
 			local qz = clamp(sz, MIN_I16, MAX_I16)
 
-			writeI16(target, cursor, qx)
-			writeI16(target, cursor + 2, qy)
-			writeI16(target, cursor + 4, qz)
+			buffer.writei16(target, cursor, qx)
+			buffer.writei16(target, cursor + 2, qy)
+			buffer.writei16(target, cursor + 4, qz)
 
 			return cursor + 6
 		end,
@@ -634,9 +661,9 @@ local function qvec3I16Unit(scale: number): Unit
 				local qy = clamp(sy, MIN_I16, MAX_I16)
 				local qz = clamp(sz, MIN_I16, MAX_I16)
 
-				writeI16(target, cursor, qx)
-				writeI16(target, cursor + 2, qy)
-				writeI16(target, cursor + 4, qz)
+				buffer.writei16(target, cursor, qx)
+				buffer.writei16(target, cursor + 2, qy)
+				buffer.writei16(target, cursor + 4, qz)
 				cursor += 6
 			end
 
@@ -646,9 +673,9 @@ local function qvec3I16Unit(scale: number): Unit
 		read = function(source: buffer, cursor: number): (any, number)
 			ensureReadable(source, cursor, 6)
 
-			local qx = readI16(source, cursor)
-			local qy = readI16(source, cursor + 2)
-			local qz = readI16(source, cursor + 4)
+			local qx = buffer.readi16(source, cursor)
+			local qy = buffer.readi16(source, cursor + 2)
+			local qz = buffer.readi16(source, cursor + 4)
 			local x = qx * inverseScale
 			local y = qy * inverseScale
 			local z = qz * inverseScale
@@ -690,10 +717,10 @@ local function qtransformYawI16Unit(scale: number): Unit
 			local yaw = atan2(-look.X, -look.Z)
 			local qyaw = quantizeAngleU8(yaw)
 
-			writeI16(target, cursor, qx)
-			writeI16(target, cursor + 2, qy)
-			writeI16(target, cursor + 4, qz)
-			writeU8(target, cursor + 6, qyaw)
+			buffer.writei16(target, cursor, qx)
+			buffer.writei16(target, cursor + 2, qy)
+			buffer.writei16(target, cursor + 4, qz)
+			buffer.writeu8(target, cursor + 6, qyaw)
 
 			return cursor + 7
 		end,
@@ -712,10 +739,10 @@ local function qtransformYawI16Unit(scale: number): Unit
 				local yaw = atan2(-look.X, -look.Z)
 				local qyaw = quantizeAngleU8(yaw)
 
-				writeI16(target, cursor, qx)
-				writeI16(target, cursor + 2, qy)
-				writeI16(target, cursor + 4, qz)
-				writeU8(target, cursor + 6, qyaw)
+				buffer.writei16(target, cursor, qx)
+				buffer.writei16(target, cursor + 2, qy)
+				buffer.writei16(target, cursor + 4, qz)
+				buffer.writeu8(target, cursor + 6, qyaw)
 				cursor += 7
 			end
 
@@ -725,10 +752,10 @@ local function qtransformYawI16Unit(scale: number): Unit
 		read = function(source: buffer, cursor: number): (any, number)
 			ensureReadable(source, cursor, 7)
 
-			local qx = readI16(source, cursor)
-			local qy = readI16(source, cursor + 2)
-			local qz = readI16(source, cursor + 4)
-			local qyaw = readU8(source, cursor + 6)
+			local qx = buffer.readi16(source, cursor)
+			local qy = buffer.readi16(source, cursor + 2)
+			local qz = buffer.readi16(source, cursor + 4)
+			local qyaw = buffer.readu8(source, cursor + 6)
 			local x = qx * inverseScale
 			local y = qy * inverseScale
 			local z = qz * inverseScale
@@ -834,7 +861,7 @@ units["nil"] = noneUnit
 local function readBoolean(source: buffer, cursor: number): boolean
 	ensureReadable(source, cursor, 1)
 
-	local flagByte = readU8(source, cursor)
+	local flagByte = buffer.readu8(source, cursor)
 
 	if flagByte == 0 then
 		return false
@@ -860,13 +887,13 @@ local boolUnit: Unit = {
 	end,
 
 	write = function(target: buffer, cursor: number, value: any): number
-		writeU8(target, cursor, if value then 1 else 0)
+		buffer.writeu8(target, cursor, if value then 1 else 0)
 		return cursor + 1
 	end,
 
 	writeMany = function(target: buffer, cursor: number, values: { any }): number
 		for index = 1, #values do
-			writeU8(target, cursor, if values[index] then 1 else 0)
+			buffer.writeu8(target, cursor, if values[index] then 1 else 0)
 			cursor += 1
 		end
 
@@ -921,7 +948,7 @@ units.u4 = {
 		local first = clamp(round(value[1] or 0), 0, 15)
 		local second = clamp(round(value[2] or 0), 0, 15)
 
-		writeU8(target, cursor, first + second * 16)
+		buffer.writeu8(target, cursor, first + second * 16)
 
 		return cursor + 1
 	end,
@@ -932,7 +959,7 @@ units.u4 = {
 			local first = clamp(round(value[1] or 0), 0, 15)
 			local second = clamp(round(value[2] or 0), 0, 15)
 
-			writeU8(target, cursor, first + second * 16)
+			buffer.writeu8(target, cursor, first + second * 16)
 			cursor += 1
 		end
 
@@ -942,7 +969,7 @@ units.u4 = {
 	read = function(source: buffer, cursor: number): (any, number)
 		ensureReadable(source, cursor, 1)
 
-		local packed = readU8(source, cursor)
+		local packed = buffer.readu8(source, cursor)
 
 		return { packed % 16, floor(packed / 16) }, cursor + 1
 	end,
@@ -968,7 +995,7 @@ units.boolean1 = {
 			end
 		end
 
-		writeU8(target, cursor, packed)
+		buffer.writeu8(target, cursor, packed)
 
 		return cursor + 1
 	end,
@@ -984,7 +1011,7 @@ units.boolean1 = {
 				end
 			end
 
-			writeU8(target, cursor, packed)
+			buffer.writeu8(target, cursor, packed)
 			cursor += 1
 		end
 
@@ -994,7 +1021,7 @@ units.boolean1 = {
 	read = function(source: buffer, cursor: number): (any, number)
 		ensureReadable(source, cursor, 1)
 
-		local packed = readU8(source, cursor)
+		local packed = buffer.readu8(source, cursor)
 		local value = createArray(8)
 
 		for index = 1, 8 do
@@ -1017,13 +1044,13 @@ local u16Unit: Unit = {
 	end,
 
 	write = function(target: buffer, cursor: number, value: any): number
-		writeU16(target, cursor, value)
+		buffer.writeu16(target, cursor, value)
 		return cursor + 2
 	end,
 
 	writeMany = function(target: buffer, cursor: number, values: { any }): number
 		for index = 1, #values do
-			writeU16(target, cursor, values[index])
+			buffer.writeu16(target, cursor, values[index])
 			cursor += 2
 		end
 
@@ -1033,13 +1060,13 @@ local u16Unit: Unit = {
 	read = function(source: buffer, cursor: number): (any, number)
 		ensureReadable(source, cursor, 2)
 
-		return readU16(source, cursor), cursor + 2
+		return buffer.readu16(source, cursor), cursor + 2
 	end,
 
 	stream = function(source: buffer, cursor: number, count: number, callback: (any) -> ()): number
 		for _index = 1, count do
 			ensureReadable(source, cursor, 2)
-			callback(readU16(source, cursor))
+			callback(buffer.readu16(source, cursor))
 			cursor += 2
 		end
 
@@ -1055,7 +1082,7 @@ local u16Unit: Unit = {
 	): number
 		for _index = 1, count do
 			ensureReadable(source, cursor, 2)
-			callback(sender, readU16(source, cursor))
+			callback(sender, buffer.readu16(source, cursor))
 			cursor += 2
 		end
 
@@ -1078,7 +1105,7 @@ local u32Unit: Unit = {
 	end,
 
 	write = function(target: buffer, cursor: number, value: any): number
-		writeU32(target, cursor, value)
+		buffer.writeu32(target, cursor, value)
 		return cursor + 4
 	end,
 
@@ -1086,7 +1113,7 @@ local u32Unit: Unit = {
 		for index = 1, #values do
 			local value = values[index]
 
-			writeU32(target, cursor, value)
+			buffer.writeu32(target, cursor, value)
 			cursor += 4
 		end
 
@@ -1096,13 +1123,13 @@ local u32Unit: Unit = {
 	read = function(source: buffer, cursor: number): (any, number)
 		ensureReadable(source, cursor, 4)
 
-		return readU32(source, cursor), cursor + 4
+		return buffer.readu32(source, cursor), cursor + 4
 	end,
 
 	stream = function(source: buffer, cursor: number, count: number, callback: (any) -> ()): number
 		for _index = 1, count do
 			ensureReadable(source, cursor, 4)
-			callback(readU32(source, cursor))
+			callback(buffer.readu32(source, cursor))
 			cursor += 4
 		end
 
@@ -1118,7 +1145,7 @@ local u32Unit: Unit = {
 	): number
 		for _index = 1, count do
 			ensureReadable(source, cursor, 4)
-			callback(sender, readU32(source, cursor))
+			callback(sender, buffer.readu32(source, cursor))
 			cursor += 4
 		end
 
@@ -1136,7 +1163,7 @@ units.entityid = u32Unit
 local function readPlayer(source: buffer, cursor: number): (Player, number)
 	ensureReadable(source, cursor, 4)
 
-	local userId = readU32(source, cursor)
+	local userId = buffer.readu32(source, cursor)
 	local player = Players:GetPlayerByUserId(userId)
 
 	if not player then
@@ -1172,13 +1199,13 @@ local playerUnit: Unit = {
 	end,
 
 	write = function(target: buffer, cursor: number, value: Player): number
-		writeU32(target, cursor, value.UserId)
+		buffer.writeu32(target, cursor, value.UserId)
 		return cursor + 4
 	end,
 
 	writeMany = function(target: buffer, cursor: number, values: { any }): number
 		for index = 1, #values do
-			writeU32(target, cursor, values[index].UserId)
+			buffer.writeu32(target, cursor, values[index].UserId)
 			cursor += 4
 		end
 
@@ -1236,7 +1263,7 @@ local characterUnit: Unit = {
 			error("[VNet]: character payload must belong to a Player.", 3)
 		end
 
-		writeU32(target, cursor, player.UserId)
+		buffer.writeu32(target, cursor, player.UserId)
 		return cursor + 4
 	end,
 
@@ -1248,7 +1275,7 @@ local characterUnit: Unit = {
 				error("[VNet]: character payload must belong to a Player.", 3)
 			end
 
-			writeU32(target, cursor, player.UserId)
+			buffer.writeu32(target, cursor, player.UserId)
 			cursor += 4
 		end
 
@@ -1309,11 +1336,11 @@ local u32ArrayUnit: Unit = {
 	end,
 
 	write = function(target: buffer, cursor: number, value: { any }): number
-		writeU32(target, cursor, #value)
+		buffer.writeu32(target, cursor, #value)
 		cursor += 4
 
 		for index = 1, #value do
-			writeU32(target, cursor, value[index])
+			buffer.writeu32(target, cursor, value[index])
 			cursor += 4
 		end
 
@@ -1324,11 +1351,11 @@ local u32ArrayUnit: Unit = {
 		for valueIndex = 1, #values do
 			local value = values[valueIndex]
 
-			writeU32(target, cursor, #value)
+			buffer.writeu32(target, cursor, #value)
 			cursor += 4
 
 			for entryIndex = 1, #value do
-				writeU32(target, cursor, value[entryIndex])
+				buffer.writeu32(target, cursor, value[entryIndex])
 				cursor += 4
 			end
 		end
@@ -1344,7 +1371,7 @@ local u32ArrayUnit: Unit = {
 		ensureReadable(source, cursor, size * 4)
 
 		for index = 1, size do
-			value[index] = readU32(source, cursor)
+			value[index] = buffer.readu32(source, cursor)
 			cursor += 4
 		end
 
@@ -1385,7 +1412,7 @@ local function stringUnit(minLength: number?, maxLength: number?): Unit
 
 			checkWriteLength(size, minLength, maxLength, limit, "string")
 			writeLength(target, cursor, size)
-			writeString(target, textCursor, value, size)
+			buffer.writestring(target, textCursor, value, size)
 
 			return textCursor + size
 		end,
@@ -1398,7 +1425,7 @@ local function stringUnit(minLength: number?, maxLength: number?): Unit
 
 				checkWriteLength(size, minLength, maxLength, limit, "string")
 				writeLength(target, cursor, size)
-				writeString(target, textCursor, value, size)
+				buffer.writestring(target, textCursor, value, size)
 				cursor = textCursor + size
 			end
 
@@ -1414,7 +1441,7 @@ local function stringUnit(minLength: number?, maxLength: number?): Unit
 			checkReadLength(size, minLength, maxLength, limit, "string")
 			ensureReadable(source, textCursor, size)
 
-			return readString(source, textCursor, size), textCursor + size
+			return buffer.readstring(source, textCursor, size), textCursor + size
 		end,
 	}
 end
@@ -1425,7 +1452,7 @@ local function bufferUnit(minLength: number?, maxLength: number?): Unit
 
 	return {
 		measure = function(value: buffer): number
-			local size = lenBuffer(value)
+			local size = buffer.len(value)
 
 			checkWriteLength(size, minLength, maxLength, limit, "buffer")
 
@@ -1437,7 +1464,7 @@ local function bufferUnit(minLength: number?, maxLength: number?): Unit
 
 			for index = 1, #values do
 				local value = values[index]
-				local length = lenBuffer(value)
+				local length = buffer.len(value)
 
 				checkWriteLength(length, minLength, maxLength, limit, "buffer")
 				size += lengthSize + length
@@ -1447,12 +1474,12 @@ local function bufferUnit(minLength: number?, maxLength: number?): Unit
 		end,
 
 		write = function(target: buffer, cursor: number, value: buffer): number
-			local size = lenBuffer(value)
+			local size = buffer.len(value)
 			local dataCursor = cursor + lengthSize
 
 			checkWriteLength(size, minLength, maxLength, limit, "buffer")
 			writeLength(target, cursor, size)
-			copyBuffer(target, dataCursor, value, 0, size)
+			buffer.copy(target, dataCursor, value, 0, size)
 
 			return dataCursor + size
 		end,
@@ -1460,12 +1487,12 @@ local function bufferUnit(minLength: number?, maxLength: number?): Unit
 		writeMany = function(target: buffer, cursor: number, values: { any }): number
 			for index = 1, #values do
 				local value = values[index]
-				local size = lenBuffer(value)
+				local size = buffer.len(value)
 				local dataCursor = cursor + lengthSize
 
 				checkWriteLength(size, minLength, maxLength, limit, "buffer")
 				writeLength(target, cursor, size)
-				copyBuffer(target, dataCursor, value, 0, size)
+				buffer.copy(target, dataCursor, value, 0, size)
 				cursor = dataCursor + size
 			end
 
@@ -1481,9 +1508,9 @@ local function bufferUnit(minLength: number?, maxLength: number?): Unit
 			checkReadLength(size, minLength, maxLength, limit, "buffer")
 			ensureReadable(source, dataCursor, size)
 
-			local value = createBuffer(size)
+			local value = buffer.create(size)
 
-			copyBuffer(value, 0, source, dataCursor, size)
+			buffer.copy(value, 0, source, dataCursor, size)
 
 			return value, dataCursor + size
 		end,
@@ -1527,15 +1554,15 @@ local stringArrayUnit: Unit = {
 	end,
 
 	write = function(target: buffer, cursor: number, value: { any }): number
-		writeU32(target, cursor, #value)
+		buffer.writeu32(target, cursor, #value)
 		cursor += 4
 
 		for index = 1, #value do
 			local entry = value[index]
 			local size = #entry
 
-			writeU32(target, cursor, size)
-			writeString(target, cursor + 4, entry, size)
+			buffer.writeu32(target, cursor, size)
+			buffer.writestring(target, cursor + 4, entry, size)
 			cursor += 4 + size
 		end
 
@@ -1546,15 +1573,15 @@ local stringArrayUnit: Unit = {
 		for valueIndex = 1, #values do
 			local value = values[valueIndex]
 
-			writeU32(target, cursor, #value)
+			buffer.writeu32(target, cursor, #value)
 			cursor += 4
 
 			for entryIndex = 1, #value do
 				local entry = value[entryIndex]
 				local size = #entry
 
-				writeU32(target, cursor, size)
-				writeString(target, cursor + 4, entry, size)
+				buffer.writeu32(target, cursor, size)
+				buffer.writestring(target, cursor + 4, entry, size)
 				cursor += 4 + size
 			end
 		end
@@ -1591,8 +1618,8 @@ units.vec2 = {
 	end,
 
 	write = function(target: buffer, cursor: number, value: Vector2): number
-		writeF32(target, cursor, value.X)
-		writeF32(target, cursor + 4, value.Y)
+		buffer.writef32(target, cursor, value.X)
+		buffer.writef32(target, cursor + 4, value.Y)
 
 		return cursor + 8
 	end,
@@ -1601,8 +1628,8 @@ units.vec2 = {
 		for index = 1, #values do
 			local value = values[index]
 
-			writeF32(target, cursor, value.X)
-			writeF32(target, cursor + 4, value.Y)
+			buffer.writef32(target, cursor, value.X)
+			buffer.writef32(target, cursor + 4, value.Y)
 			cursor += 8
 		end
 
@@ -1612,8 +1639,8 @@ units.vec2 = {
 	read = function(source: buffer, cursor: number): (any, number)
 		ensureReadable(source, cursor, 8)
 
-		local x = readF32(source, cursor)
-		local y = readF32(source, cursor + 4)
+		local x = buffer.readf32(source, cursor)
+		local y = buffer.readf32(source, cursor + 4)
 
 		return Vector2.new(x, y), cursor + 8
 	end,
@@ -1633,8 +1660,8 @@ units.vector2s16 = {
 	end,
 
 	write = function(target: buffer, cursor: number, value: Vector2): number
-		writeI16(target, cursor, clamp(round(value.X), MIN_I16, MAX_I16))
-		writeI16(target, cursor + 2, clamp(round(value.Y), MIN_I16, MAX_I16))
+		buffer.writei16(target, cursor, clamp(round(value.X), MIN_I16, MAX_I16))
+		buffer.writei16(target, cursor + 2, clamp(round(value.Y), MIN_I16, MAX_I16))
 
 		return cursor + 4
 	end,
@@ -1643,8 +1670,8 @@ units.vector2s16 = {
 		for index = 1, #values do
 			local value = values[index]
 
-			writeI16(target, cursor, clamp(round(value.X), MIN_I16, MAX_I16))
-			writeI16(target, cursor + 2, clamp(round(value.Y), MIN_I16, MAX_I16))
+			buffer.writei16(target, cursor, clamp(round(value.X), MIN_I16, MAX_I16))
+			buffer.writei16(target, cursor + 2, clamp(round(value.Y), MIN_I16, MAX_I16))
 			cursor += 4
 		end
 
@@ -1654,8 +1681,8 @@ units.vector2s16 = {
 	read = function(source: buffer, cursor: number): (any, number)
 		ensureReadable(source, cursor, 4)
 
-		local x = readI16(source, cursor)
-		local y = readI16(source, cursor + 2)
+		local x = buffer.readi16(source, cursor)
+		local y = buffer.readi16(source, cursor + 2)
 
 		return Vector2.new(x, y), cursor + 4
 	end,
@@ -1713,9 +1740,9 @@ units.vec3 = {
 	end,
 
 	write = function(target: buffer, cursor: number, value: Vector3): number
-		writeF32(target, cursor, value.X)
-		writeF32(target, cursor + 4, value.Y)
-		writeF32(target, cursor + 8, value.Z)
+		buffer.writef32(target, cursor, value.X)
+		buffer.writef32(target, cursor + 4, value.Y)
+		buffer.writef32(target, cursor + 8, value.Z)
 
 		return cursor + 12
 	end,
@@ -1724,9 +1751,9 @@ units.vec3 = {
 		for index = 1, #values do
 			local value = values[index]
 
-			writeF32(target, cursor, value.X)
-			writeF32(target, cursor + 4, value.Y)
-			writeF32(target, cursor + 8, value.Z)
+			buffer.writef32(target, cursor, value.X)
+			buffer.writef32(target, cursor + 4, value.Y)
+			buffer.writef32(target, cursor + 8, value.Z)
 			cursor += 12
 		end
 
@@ -1736,9 +1763,9 @@ units.vec3 = {
 	read = function(source: buffer, cursor: number): (any, number)
 		ensureReadable(source, cursor, 12)
 
-		local x = readF32(source, cursor)
-		local y = readF32(source, cursor + 4)
-		local z = readF32(source, cursor + 8)
+		local x = buffer.readf32(source, cursor)
+		local y = buffer.readf32(source, cursor + 4)
+		local z = buffer.readf32(source, cursor + 8)
 		local vector = makeVector3(x, y, z)
 
 		return vector, cursor + 12
@@ -1809,9 +1836,9 @@ units.qnormal_i16 = {
 		local qy = quantizeUnitI16(value.Y)
 		local qz = quantizeUnitI16(value.Z)
 
-		writeI16(target, cursor, qx)
-		writeI16(target, cursor + 2, qy)
-		writeI16(target, cursor + 4, qz)
+		buffer.writei16(target, cursor, qx)
+		buffer.writei16(target, cursor + 2, qy)
+		buffer.writei16(target, cursor + 4, qz)
 
 		return cursor + 6
 	end,
@@ -1823,9 +1850,9 @@ units.qnormal_i16 = {
 			local qy = quantizeUnitI16(value.Y)
 			local qz = quantizeUnitI16(value.Z)
 
-			writeI16(target, cursor, qx)
-			writeI16(target, cursor + 2, qy)
-			writeI16(target, cursor + 4, qz)
+			buffer.writei16(target, cursor, qx)
+			buffer.writei16(target, cursor + 2, qy)
+			buffer.writei16(target, cursor + 4, qz)
 			cursor += 6
 		end
 
@@ -1835,9 +1862,9 @@ units.qnormal_i16 = {
 	read = function(source: buffer, cursor: number): (any, number)
 		ensureReadable(source, cursor, 6)
 
-		local qx = readI16(source, cursor)
-		local qy = readI16(source, cursor + 2)
-		local qz = readI16(source, cursor + 4)
+		local qx = buffer.readi16(source, cursor)
+		local qy = buffer.readi16(source, cursor + 2)
+		local qz = buffer.readi16(source, cursor + 4)
 		local x = qx * I16_TO_NORMAL
 		local y = qy * I16_TO_NORMAL
 		local z = qz * I16_TO_NORMAL
@@ -1861,7 +1888,7 @@ units.qyaw_u8 = {
 	write = function(target: buffer, cursor: number, value: number): number
 		local yaw = quantizeAngleU8(value)
 
-		writeU8(target, cursor, yaw)
+		buffer.writeu8(target, cursor, yaw)
 
 		return cursor + 1
 	end,
@@ -1870,7 +1897,7 @@ units.qyaw_u8 = {
 		for index = 1, #values do
 			local yaw = quantizeAngleU8(values[index])
 
-			writeU8(target, cursor, yaw)
+			buffer.writeu8(target, cursor, yaw)
 			cursor += 1
 		end
 
@@ -1880,7 +1907,7 @@ units.qyaw_u8 = {
 	read = function(source: buffer, cursor: number): (any, number)
 		ensureReadable(source, cursor, 1)
 
-		local yaw = readU8(source, cursor)
+		local yaw = buffer.readu8(source, cursor)
 		local value = yaw * U8_TO_RADIAN
 
 		return value, cursor + 1
@@ -1901,7 +1928,7 @@ units.qangle_u16 = {
 	write = function(target: buffer, cursor: number, value: number): number
 		local angle = quantizeAngleU16(value)
 
-		writeU16(target, cursor, angle)
+		buffer.writeu16(target, cursor, angle)
 
 		return cursor + 2
 	end,
@@ -1910,7 +1937,7 @@ units.qangle_u16 = {
 		for index = 1, #values do
 			local angle = quantizeAngleU16(values[index])
 
-			writeU16(target, cursor, angle)
+			buffer.writeu16(target, cursor, angle)
 			cursor += 2
 		end
 
@@ -1920,7 +1947,7 @@ units.qangle_u16 = {
 	read = function(source: buffer, cursor: number): (any, number)
 		ensureReadable(source, cursor, 2)
 
-		local angle = readU16(source, cursor)
+		local angle = buffer.readu16(source, cursor)
 		local value = angle * U16_TO_RADIAN
 
 		return value, cursor + 2
@@ -1941,7 +1968,7 @@ units.qalpha_u8 = {
 	write = function(target: buffer, cursor: number, value: number): number
 		local alpha = quantizeUnitU8(value)
 
-		writeU8(target, cursor, alpha)
+		buffer.writeu8(target, cursor, alpha)
 
 		return cursor + 1
 	end,
@@ -1950,7 +1977,7 @@ units.qalpha_u8 = {
 		for index = 1, #values do
 			local alpha = quantizeUnitU8(values[index])
 
-			writeU8(target, cursor, alpha)
+			buffer.writeu8(target, cursor, alpha)
 			cursor += 1
 		end
 
@@ -1960,7 +1987,7 @@ units.qalpha_u8 = {
 	read = function(source: buffer, cursor: number): (any, number)
 		ensureReadable(source, cursor, 1)
 
-		local alpha = readU8(source, cursor)
+		local alpha = buffer.readu8(source, cursor)
 		local value = alpha * U8_TO_ALPHA
 
 		return value, cursor + 1
@@ -1981,18 +2008,18 @@ units.cframe = {
 	write = function(target: buffer, cursor: number, value: CFrame): number
 		local x, y, z, r00, r01, r02, r10, r11, r12, r20, r21, r22 = value:GetComponents()
 
-		writeF32(target, cursor, x)
-		writeF32(target, cursor + 4, y)
-		writeF32(target, cursor + 8, z)
-		writeF32(target, cursor + 12, r00)
-		writeF32(target, cursor + 16, r01)
-		writeF32(target, cursor + 20, r02)
-		writeF32(target, cursor + 24, r10)
-		writeF32(target, cursor + 28, r11)
-		writeF32(target, cursor + 32, r12)
-		writeF32(target, cursor + 36, r20)
-		writeF32(target, cursor + 40, r21)
-		writeF32(target, cursor + 44, r22)
+		buffer.writef32(target, cursor, x)
+		buffer.writef32(target, cursor + 4, y)
+		buffer.writef32(target, cursor + 8, z)
+		buffer.writef32(target, cursor + 12, r00)
+		buffer.writef32(target, cursor + 16, r01)
+		buffer.writef32(target, cursor + 20, r02)
+		buffer.writef32(target, cursor + 24, r10)
+		buffer.writef32(target, cursor + 28, r11)
+		buffer.writef32(target, cursor + 32, r12)
+		buffer.writef32(target, cursor + 36, r20)
+		buffer.writef32(target, cursor + 40, r21)
+		buffer.writef32(target, cursor + 44, r22)
 
 		return cursor + 48
 	end,
@@ -2002,18 +2029,18 @@ units.cframe = {
 			local value = values[index]
 			local x, y, z, r00, r01, r02, r10, r11, r12, r20, r21, r22 = value:GetComponents()
 
-			writeF32(target, cursor, x)
-			writeF32(target, cursor + 4, y)
-			writeF32(target, cursor + 8, z)
-			writeF32(target, cursor + 12, r00)
-			writeF32(target, cursor + 16, r01)
-			writeF32(target, cursor + 20, r02)
-			writeF32(target, cursor + 24, r10)
-			writeF32(target, cursor + 28, r11)
-			writeF32(target, cursor + 32, r12)
-			writeF32(target, cursor + 36, r20)
-			writeF32(target, cursor + 40, r21)
-			writeF32(target, cursor + 44, r22)
+			buffer.writef32(target, cursor, x)
+			buffer.writef32(target, cursor + 4, y)
+			buffer.writef32(target, cursor + 8, z)
+			buffer.writef32(target, cursor + 12, r00)
+			buffer.writef32(target, cursor + 16, r01)
+			buffer.writef32(target, cursor + 20, r02)
+			buffer.writef32(target, cursor + 24, r10)
+			buffer.writef32(target, cursor + 28, r11)
+			buffer.writef32(target, cursor + 32, r12)
+			buffer.writef32(target, cursor + 36, r20)
+			buffer.writef32(target, cursor + 40, r21)
+			buffer.writef32(target, cursor + 44, r22)
 			cursor += 48
 		end
 
@@ -2023,18 +2050,18 @@ units.cframe = {
 	read = function(source: buffer, cursor: number): (any, number)
 		ensureReadable(source, cursor, 48)
 
-		local x = readF32(source, cursor)
-		local y = readF32(source, cursor + 4)
-		local z = readF32(source, cursor + 8)
-		local r00 = readF32(source, cursor + 12)
-		local r01 = readF32(source, cursor + 16)
-		local r02 = readF32(source, cursor + 20)
-		local r10 = readF32(source, cursor + 24)
-		local r11 = readF32(source, cursor + 28)
-		local r12 = readF32(source, cursor + 32)
-		local r20 = readF32(source, cursor + 36)
-		local r21 = readF32(source, cursor + 40)
-		local r22 = readF32(source, cursor + 44)
+		local x = buffer.readf32(source, cursor)
+		local y = buffer.readf32(source, cursor + 4)
+		local z = buffer.readf32(source, cursor + 8)
+		local r00 = buffer.readf32(source, cursor + 12)
+		local r01 = buffer.readf32(source, cursor + 16)
+		local r02 = buffer.readf32(source, cursor + 20)
+		local r10 = buffer.readf32(source, cursor + 24)
+		local r11 = buffer.readf32(source, cursor + 28)
+		local r12 = buffer.readf32(source, cursor + 32)
+		local r20 = buffer.readf32(source, cursor + 36)
+		local r21 = buffer.readf32(source, cursor + 40)
+		local r22 = buffer.readf32(source, cursor + 44)
 		local frame = makeCFrame(x, y, z, r00, r01, r02, r10, r11, r12, r20, r21, r22)
 
 		return frame, cursor + 48
@@ -2055,9 +2082,9 @@ units.cframef24u8 = {
 	write = function(target: buffer, cursor: number, value: CFrame): number
 		local rx, ry, rz = value:ToEulerAnglesXYZ()
 
-		writeU8(target, cursor, quantizeAngleU8(rx))
-		writeU8(target, cursor + 1, quantizeAngleU8(ry))
-		writeU8(target, cursor + 2, quantizeAngleU8(rz))
+		buffer.writeu8(target, cursor, quantizeAngleU8(rx))
+		buffer.writeu8(target, cursor + 1, quantizeAngleU8(ry))
+		buffer.writeu8(target, cursor + 2, quantizeAngleU8(rz))
 		writeF24Value(target, cursor + 3, value.X)
 		writeF24Value(target, cursor + 6, value.Y)
 		writeF24Value(target, cursor + 9, value.Z)
@@ -2070,9 +2097,9 @@ units.cframef24u8 = {
 			local value = values[index]
 			local rx, ry, rz = value:ToEulerAnglesXYZ()
 
-			writeU8(target, cursor, quantizeAngleU8(rx))
-			writeU8(target, cursor + 1, quantizeAngleU8(ry))
-			writeU8(target, cursor + 2, quantizeAngleU8(rz))
+			buffer.writeu8(target, cursor, quantizeAngleU8(rx))
+			buffer.writeu8(target, cursor + 1, quantizeAngleU8(ry))
+			buffer.writeu8(target, cursor + 2, quantizeAngleU8(rz))
 			writeF24Value(target, cursor + 3, value.X)
 			writeF24Value(target, cursor + 6, value.Y)
 			writeF24Value(target, cursor + 9, value.Z)
@@ -2085,9 +2112,9 @@ units.cframef24u8 = {
 	read = function(source: buffer, cursor: number): (any, number)
 		ensureReadable(source, cursor, 12)
 
-		local rx = readU8(source, cursor) * U8_TO_RADIAN
-		local ry = readU8(source, cursor + 1) * U8_TO_RADIAN
-		local rz = readU8(source, cursor + 2) * U8_TO_RADIAN
+		local rx = buffer.readu8(source, cursor) * U8_TO_RADIAN
+		local ry = buffer.readu8(source, cursor + 1) * U8_TO_RADIAN
+		local rz = buffer.readu8(source, cursor + 2) * U8_TO_RADIAN
 		local x = readF24Value(source, cursor + 3)
 		local y = readF24Value(source, cursor + 6)
 		local z = readF24Value(source, cursor + 9)
@@ -2109,8 +2136,8 @@ units.numberrange = {
 	end,
 
 	write = function(target: buffer, cursor: number, value: NumberRange): number
-		writeF32(target, cursor, value.Min)
-		writeF32(target, cursor + 4, value.Max)
+		buffer.writef32(target, cursor, value.Min)
+		buffer.writef32(target, cursor + 4, value.Max)
 
 		return cursor + 8
 	end,
@@ -2119,8 +2146,8 @@ units.numberrange = {
 		for index = 1, #values do
 			local value = values[index]
 
-			writeF32(target, cursor, value.Min)
-			writeF32(target, cursor + 4, value.Max)
+			buffer.writef32(target, cursor, value.Min)
+			buffer.writef32(target, cursor + 4, value.Max)
 			cursor += 8
 		end
 
@@ -2130,8 +2157,8 @@ units.numberrange = {
 	read = function(source: buffer, cursor: number): (any, number)
 		ensureReadable(source, cursor, 8)
 
-		local minimum = readF32(source, cursor)
-		local maximum = readF32(source, cursor + 4)
+		local minimum = buffer.readf32(source, cursor)
+		local maximum = buffer.readf32(source, cursor + 4)
 		local value = NumberRange.new(minimum, maximum)
 
 		return value, cursor + 8
@@ -2150,9 +2177,9 @@ units.color3 = {
 	end,
 
 	write = function(target: buffer, cursor: number, value: Color3): number
-		writeU8(target, cursor, quantizeUnitU8(value.R))
-		writeU8(target, cursor + 1, quantizeUnitU8(value.G))
-		writeU8(target, cursor + 2, quantizeUnitU8(value.B))
+		buffer.writeu8(target, cursor, quantizeUnitU8(value.R))
+		buffer.writeu8(target, cursor + 1, quantizeUnitU8(value.G))
+		buffer.writeu8(target, cursor + 2, quantizeUnitU8(value.B))
 
 		return cursor + 3
 	end,
@@ -2161,9 +2188,9 @@ units.color3 = {
 		for index = 1, #values do
 			local value = values[index]
 
-			writeU8(target, cursor, quantizeUnitU8(value.R))
-			writeU8(target, cursor + 1, quantizeUnitU8(value.G))
-			writeU8(target, cursor + 2, quantizeUnitU8(value.B))
+			buffer.writeu8(target, cursor, quantizeUnitU8(value.R))
+			buffer.writeu8(target, cursor + 1, quantizeUnitU8(value.G))
+			buffer.writeu8(target, cursor + 2, quantizeUnitU8(value.B))
 			cursor += 3
 		end
 
@@ -2173,9 +2200,9 @@ units.color3 = {
 	read = function(source: buffer, cursor: number): (any, number)
 		ensureReadable(source, cursor, 3)
 
-		local red = readU8(source, cursor)
-		local green = readU8(source, cursor + 1)
-		local blue = readU8(source, cursor + 2)
+		local red = buffer.readu8(source, cursor)
+		local green = buffer.readu8(source, cursor + 1)
+		local blue = buffer.readu8(source, cursor + 2)
 		local value = Color3.fromRGB(red, green, blue)
 
 		return value, cursor + 3
@@ -2209,17 +2236,17 @@ units.colorsequence = {
 		local length = #keypoints
 
 		checkWriteLength(length, nil, 255, 255, "colorsequence")
-		writeU8(target, cursor, length)
+		buffer.writeu8(target, cursor, length)
 		cursor += 1
 
 		for index = 1, length do
 			local keypoint = keypoints[index]
 			local color = keypoint.Value
 
-			writeF32(target, cursor, keypoint.Time)
-			writeU8(target, cursor + 4, quantizeUnitU8(color.R))
-			writeU8(target, cursor + 5, quantizeUnitU8(color.G))
-			writeU8(target, cursor + 6, quantizeUnitU8(color.B))
+			buffer.writef32(target, cursor, keypoint.Time)
+			buffer.writeu8(target, cursor + 4, quantizeUnitU8(color.R))
+			buffer.writeu8(target, cursor + 5, quantizeUnitU8(color.G))
+			buffer.writeu8(target, cursor + 6, quantizeUnitU8(color.B))
 			cursor += 7
 		end
 
@@ -2237,17 +2264,17 @@ units.colorsequence = {
 	read = function(source: buffer, cursor: number): (any, number)
 		ensureReadable(source, cursor, 1)
 
-		local length = readU8(source, cursor)
+		local length = buffer.readu8(source, cursor)
 		local keypoints: { ColorSequenceKeypoint } = createArray(length)
 		cursor += 1
 
 		for index = 1, length do
 			ensureReadable(source, cursor, 7)
 
-			local time = readF32(source, cursor)
-			local red = readU8(source, cursor + 4)
-			local green = readU8(source, cursor + 5)
-			local blue = readU8(source, cursor + 6)
+			local time = buffer.readf32(source, cursor)
+			local red = buffer.readu8(source, cursor + 4)
+			local green = buffer.readu8(source, cursor + 5)
+			local blue = buffer.readu8(source, cursor + 6)
 			local color = Color3.fromRGB(red, green, blue)
 
 			keypoints[index] = ColorSequenceKeypoint.new(time, color)
@@ -2277,12 +2304,12 @@ units.region3 = {
 		local minimum = value.CFrame.Position - halfSize
 		local maximum = value.CFrame.Position + halfSize
 
-		writeF32(target, cursor, minimum.X)
-		writeF32(target, cursor + 4, minimum.Y)
-		writeF32(target, cursor + 8, minimum.Z)
-		writeF32(target, cursor + 12, maximum.X)
-		writeF32(target, cursor + 16, maximum.Y)
-		writeF32(target, cursor + 20, maximum.Z)
+		buffer.writef32(target, cursor, minimum.X)
+		buffer.writef32(target, cursor + 4, minimum.Y)
+		buffer.writef32(target, cursor + 8, minimum.Z)
+		buffer.writef32(target, cursor + 12, maximum.X)
+		buffer.writef32(target, cursor + 16, maximum.Y)
+		buffer.writef32(target, cursor + 20, maximum.Z)
 
 		return cursor + 24
 	end,
@@ -2298,12 +2325,12 @@ units.region3 = {
 	read = function(source: buffer, cursor: number): (any, number)
 		ensureReadable(source, cursor, 24)
 
-		local minX = readF32(source, cursor)
-		local minY = readF32(source, cursor + 4)
-		local minZ = readF32(source, cursor + 8)
-		local maxX = readF32(source, cursor + 12)
-		local maxY = readF32(source, cursor + 16)
-		local maxZ = readF32(source, cursor + 20)
+		local minX = buffer.readf32(source, cursor)
+		local minY = buffer.readf32(source, cursor + 4)
+		local minZ = buffer.readf32(source, cursor + 8)
+		local maxX = buffer.readf32(source, cursor + 12)
+		local maxY = buffer.readf32(source, cursor + 16)
+		local maxZ = buffer.readf32(source, cursor + 20)
 		local minimum = makeVector3(minX, minY, minZ)
 		local maximum = makeVector3(maxX, maxY, maxZ)
 		local value = Region3.new(minimum, maximum)
@@ -2324,10 +2351,10 @@ units.rect = {
 	end,
 
 	write = function(target: buffer, cursor: number, value: Rect): number
-		writeF32(target, cursor, value.Min.X)
-		writeF32(target, cursor + 4, value.Min.Y)
-		writeF32(target, cursor + 8, value.Max.X)
-		writeF32(target, cursor + 12, value.Max.Y)
+		buffer.writef32(target, cursor, value.Min.X)
+		buffer.writef32(target, cursor + 4, value.Min.Y)
+		buffer.writef32(target, cursor + 8, value.Max.X)
+		buffer.writef32(target, cursor + 12, value.Max.Y)
 
 		return cursor + 16
 	end,
@@ -2343,10 +2370,10 @@ units.rect = {
 	read = function(source: buffer, cursor: number): (any, number)
 		ensureReadable(source, cursor, 16)
 
-		local minX = readF32(source, cursor)
-		local minY = readF32(source, cursor + 4)
-		local maxX = readF32(source, cursor + 8)
-		local maxY = readF32(source, cursor + 12)
+		local minX = buffer.readf32(source, cursor)
+		local minY = buffer.readf32(source, cursor + 4)
+		local maxX = buffer.readf32(source, cursor + 8)
+		local maxY = buffer.readf32(source, cursor + 12)
 		local value = Rect.new(minX, minY, maxX, maxY)
 
 		return value, cursor + 16
@@ -2365,14 +2392,14 @@ units.brickcolor = {
 	end,
 
 	write = function(target: buffer, cursor: number, value: BrickColor): number
-		writeU16(target, cursor, value.Number)
+		buffer.writeu16(target, cursor, value.Number)
 
 		return cursor + 2
 	end,
 
 	writeMany = function(target: buffer, cursor: number, values: { any }): number
 		for index = 1, #values do
-			writeU16(target, cursor, values[index].Number)
+			buffer.writeu16(target, cursor, values[index].Number)
 			cursor += 2
 		end
 
@@ -2382,7 +2409,7 @@ units.brickcolor = {
 	read = function(source: buffer, cursor: number): (any, number)
 		ensureReadable(source, cursor, 2)
 
-		local brickColorNumber = readU16(source, cursor)
+		local brickColorNumber = buffer.readu16(source, cursor)
 		local makeBrickColor = getField(BrickColor :: any, "new") :: any
 		local value = makeBrickColor(brickColorNumber) :: BrickColor
 
@@ -2402,8 +2429,8 @@ units.udim = {
 	end,
 
 	write = function(target: buffer, cursor: number, value: UDim): number
-		writeF32(target, cursor, value.Scale)
-		writeI32(target, cursor + 4, value.Offset)
+		buffer.writef32(target, cursor, value.Scale)
+		buffer.writei32(target, cursor + 4, value.Offset)
 
 		return cursor + 8
 	end,
@@ -2412,8 +2439,8 @@ units.udim = {
 		for index = 1, #values do
 			local value = values[index]
 
-			writeF32(target, cursor, value.Scale)
-			writeI32(target, cursor + 4, value.Offset)
+			buffer.writef32(target, cursor, value.Scale)
+			buffer.writei32(target, cursor + 4, value.Offset)
 			cursor += 8
 		end
 
@@ -2423,8 +2450,8 @@ units.udim = {
 	read = function(source: buffer, cursor: number): (any, number)
 		ensureReadable(source, cursor, 8)
 
-		local scale = readF32(source, cursor)
-		local offset = readI32(source, cursor + 4)
+		local scale = buffer.readf32(source, cursor)
+		local offset = buffer.readi32(source, cursor + 4)
 		local value = UDim.new(scale, offset)
 
 		return value, cursor + 8
@@ -2443,10 +2470,10 @@ units.udim2 = {
 	end,
 
 	write = function(target: buffer, cursor: number, value: UDim2): number
-		writeF32(target, cursor, value.X.Scale)
-		writeI32(target, cursor + 4, value.X.Offset)
-		writeF32(target, cursor + 8, value.Y.Scale)
-		writeI32(target, cursor + 12, value.Y.Offset)
+		buffer.writef32(target, cursor, value.X.Scale)
+		buffer.writei32(target, cursor + 4, value.X.Offset)
+		buffer.writef32(target, cursor + 8, value.Y.Scale)
+		buffer.writei32(target, cursor + 12, value.Y.Offset)
 
 		return cursor + 16
 	end,
@@ -2455,10 +2482,10 @@ units.udim2 = {
 		for index = 1, #values do
 			local value = values[index]
 
-			writeF32(target, cursor, value.X.Scale)
-			writeI32(target, cursor + 4, value.X.Offset)
-			writeF32(target, cursor + 8, value.Y.Scale)
-			writeI32(target, cursor + 12, value.Y.Offset)
+			buffer.writef32(target, cursor, value.X.Scale)
+			buffer.writei32(target, cursor + 4, value.X.Offset)
+			buffer.writef32(target, cursor + 8, value.Y.Scale)
+			buffer.writei32(target, cursor + 12, value.Y.Offset)
 			cursor += 16
 		end
 
@@ -2468,10 +2495,10 @@ units.udim2 = {
 	read = function(source: buffer, cursor: number): (any, number)
 		ensureReadable(source, cursor, 16)
 
-		local xScale = readF32(source, cursor)
-		local xOffset = readI32(source, cursor + 4)
-		local yScale = readF32(source, cursor + 8)
-		local yOffset = readI32(source, cursor + 12)
+		local xScale = buffer.readf32(source, cursor)
+		local xOffset = buffer.readi32(source, cursor + 4)
+		local yScale = buffer.readf32(source, cursor + 8)
+		local yOffset = buffer.readi32(source, cursor + 12)
 		local value = UDim2.new(xScale, xOffset, yScale, yOffset)
 
 		return value, cursor + 16
@@ -2505,15 +2532,15 @@ units.numbersequence = {
 		local length = #keypoints
 
 		checkWriteLength(length, nil, 255, 255, "numbersequence")
-		writeU8(target, cursor, length)
+		buffer.writeu8(target, cursor, length)
 		cursor += 1
 
 		for index = 1, length do
 			local keypoint = keypoints[index]
 
-			writeF32(target, cursor, keypoint.Time)
-			writeF32(target, cursor + 4, keypoint.Value)
-			writeF32(target, cursor + 8, keypoint.Envelope)
+			buffer.writef32(target, cursor, keypoint.Time)
+			buffer.writef32(target, cursor + 4, keypoint.Value)
+			buffer.writef32(target, cursor + 8, keypoint.Envelope)
 			cursor += 12
 		end
 
@@ -2531,16 +2558,16 @@ units.numbersequence = {
 	read = function(source: buffer, cursor: number): (any, number)
 		ensureReadable(source, cursor, 1)
 
-		local length = readU8(source, cursor)
+		local length = buffer.readu8(source, cursor)
 		local keypoints: { NumberSequenceKeypoint } = createArray(length)
 		cursor += 1
 
 		for index = 1, length do
 			ensureReadable(source, cursor, 12)
 
-			local time = readF32(source, cursor)
-			local value = readF32(source, cursor + 4)
-			local envelope = readF32(source, cursor + 8)
+			local time = buffer.readf32(source, cursor)
+			local value = buffer.readf32(source, cursor + 4)
+			local envelope = buffer.readf32(source, cursor + 8)
 
 			keypoints[index] = NumberSequenceKeypoint.new(time, value, envelope)
 			cursor += 12
@@ -2566,6 +2593,19 @@ local function object2Unit(
 	r1: any,
 	r2: any
 ): Unit
+	--[[
+		A shape to clone rather than a table to grow. `local value = {}` and then
+		one assignment per field makes Luau resize the hash part as it goes,
+		rehashing what it already holds each time; cloning a table that already
+		has the keys allocates once and every assignment lands in a slot that is
+		there. The placeholders are overwritten, and a field decoding to nil
+		clears its key exactly as before.
+	]]
+	local prototype: { [string]: any } = {
+		[n1] = false,
+		[n2] = false,
+	}
+
 	return {
 		size = objectSize,
 
@@ -2612,7 +2652,7 @@ local function object2Unit(
 		end,
 
 		read = function(source: buffer, cursor: number): (any, number)
-			local value = {}
+			local value = table.clone(prototype)
 			local decoded
 
 			decoded, cursor = r1(source, cursor)
@@ -2647,9 +2687,9 @@ local function objectStringBoolUnit(n1: string, n2: string): Unit
 			local text = value[n1]
 			local size = #text
 
-			writeU32(target, cursor, size)
-			writeString(target, cursor + 4, text, size)
-			writeU8(target, cursor + 4 + size, if value[n2] then 1 else 0)
+			buffer.writeu32(target, cursor, size)
+			buffer.writestring(target, cursor + 4, text, size)
+			buffer.writeu8(target, cursor + 4 + size, if value[n2] then 1 else 0)
 
 			return cursor + 5 + size
 		end,
@@ -2660,9 +2700,9 @@ local function objectStringBoolUnit(n1: string, n2: string): Unit
 				local text = value[n1]
 				local size = #text
 
-				writeU32(target, cursor, size)
-				writeString(target, cursor + 4, text, size)
-				writeU8(target, cursor + 4 + size, if value[n2] then 1 else 0)
+				buffer.writeu32(target, cursor, size)
+				buffer.writestring(target, cursor + 4, text, size)
+				buffer.writeu8(target, cursor + 4 + size, if value[n2] then 1 else 0)
 				cursor += 5 + size
 			end
 
@@ -2679,7 +2719,7 @@ local function objectStringBoolUnit(n1: string, n2: string): Unit
 
 			ensureReadable(source, cursor, 1)
 
-			local flagByte = readU8(source, cursor)
+			local flagByte = buffer.readu8(source, cursor)
 
 			setBooleanField(value, n2, flagByte)
 
@@ -2703,6 +2743,20 @@ local function object3Unit(
 	r2: any,
 	r3: any
 ): Unit
+	--[[
+		A shape to clone rather than a table to grow. `local value = {}` and then
+		one assignment per field makes Luau resize the hash part as it goes,
+		rehashing what it already holds each time; cloning a table that already
+		has the keys allocates once and every assignment lands in a slot that is
+		there. The placeholders are overwritten, and a field decoding to nil
+		clears its key exactly as before.
+	]]
+	local prototype: { [string]: any } = {
+		[n1] = false,
+		[n2] = false,
+		[n3] = false,
+	}
+
 	return {
 		size = objectSize,
 
@@ -2751,7 +2805,7 @@ local function object3Unit(
 		end,
 
 		read = function(source: buffer, cursor: number): (any, number)
-			local value = {}
+			local value = table.clone(prototype)
 			local decoded
 
 			decoded, cursor = r1(source, cursor)
@@ -2768,7 +2822,7 @@ end
 
 local function objectStringBoolU32Unit(n1: string, n2: string, n3: string): Unit
 	local function writeNumberField(target: buffer, cursor: number, owner: { [string]: any }): ()
-		writeU32(target, cursor, owner[n3])
+		buffer.writeu32(target, cursor, owner[n3])
 	end
 
 	return {
@@ -2793,9 +2847,9 @@ local function objectStringBoolU32Unit(n1: string, n2: string, n3: string): Unit
 			local size = #text
 			local boolCursor = cursor + 4 + size
 
-			writeU32(target, cursor, size)
-			writeString(target, cursor + 4, text, size)
-			writeU8(target, boolCursor, if value[n2] then 1 else 0)
+			buffer.writeu32(target, cursor, size)
+			buffer.writestring(target, cursor + 4, text, size)
+			buffer.writeu8(target, boolCursor, if value[n2] then 1 else 0)
 			writeNumberField(target, boolCursor + 1, value)
 
 			return boolCursor + 5
@@ -2808,9 +2862,9 @@ local function objectStringBoolU32Unit(n1: string, n2: string, n3: string): Unit
 				local size = #text
 				local boolCursor = cursor + 4 + size
 
-				writeU32(target, cursor, size)
-				writeString(target, cursor + 4, text, size)
-				writeU8(target, boolCursor, if value[n2] then 1 else 0)
+				buffer.writeu32(target, cursor, size)
+				buffer.writestring(target, cursor + 4, text, size)
+				buffer.writeu8(target, boolCursor, if value[n2] then 1 else 0)
 				writeNumberField(target, boolCursor + 1, value)
 				cursor = boolCursor + 5
 			end
@@ -2830,9 +2884,9 @@ local function objectStringBoolU32Unit(n1: string, n2: string, n3: string): Unit
 
 			local target = batch.data
 
-			writeU32(target, cursor, size)
-			writeString(target, textCursor, text, size)
-			writeU8(target, boolCursor, if value[n2] then 1 else 0)
+			buffer.writeu32(target, cursor, size)
+			buffer.writestring(target, textCursor, text, size)
+			buffer.writeu8(target, boolCursor, if value[n2] then 1 else 0)
 			writeNumberField(target, boolCursor + 1, value)
 
 			batch.size = needed
@@ -2849,7 +2903,7 @@ local function objectStringBoolU32Unit(n1: string, n2: string, n3: string): Unit
 
 			ensureReadable(source, cursor, 1)
 
-			local flagByte = readU8(source, cursor)
+			local flagByte = buffer.readu8(source, cursor)
 
 			setBooleanField(value, n2, flagByte)
 
@@ -2857,7 +2911,7 @@ local function objectStringBoolU32Unit(n1: string, n2: string, n3: string): Unit
 
 			ensureReadable(source, numberCursor, 4)
 
-			local numberValue = readU32(source, numberCursor)
+			local numberValue = buffer.readu32(source, numberCursor)
 
 			setField(value, n3, numberValue)
 
@@ -2879,9 +2933,9 @@ local function objectU16U16U16Unit(n1: string, n2: string, n3: string): Unit
 		end,
 
 		write = function(target: buffer, cursor: number, value: { [string]: any }): number
-			writeU16(target, cursor, value[n1])
-			writeU16(target, cursor + 2, value[n2])
-			writeU16(target, cursor + 4, value[n3])
+			buffer.writeu16(target, cursor, value[n1])
+			buffer.writeu16(target, cursor + 2, value[n2])
+			buffer.writeu16(target, cursor + 4, value[n3])
 
 			return cursor + 6
 		end,
@@ -2890,9 +2944,9 @@ local function objectU16U16U16Unit(n1: string, n2: string, n3: string): Unit
 			for index = 1, #values do
 				local value = values[index]
 
-				writeU16(target, cursor, value[n1])
-				writeU16(target, cursor + 2, value[n2])
-				writeU16(target, cursor + 4, value[n3])
+				buffer.writeu16(target, cursor, value[n1])
+				buffer.writeu16(target, cursor + 2, value[n2])
+				buffer.writeu16(target, cursor + 4, value[n3])
 				cursor += 6
 			end
 
@@ -2904,9 +2958,9 @@ local function objectU16U16U16Unit(n1: string, n2: string, n3: string): Unit
 
 			local value = {}
 
-			value[n1] = readU16(source, cursor)
-			value[n2] = readU16(source, cursor + 2)
-			value[n3] = readU16(source, cursor + 4)
+			value[n1] = buffer.readu16(source, cursor)
+			value[n2] = buffer.readu16(source, cursor + 2)
+			value[n3] = buffer.readu16(source, cursor + 4)
 
 			return value, cursor + 6
 		end,
@@ -2936,6 +2990,22 @@ local function object5Unit(
 	r4: any,
 	r5: any
 ): Unit
+	--[[
+		A shape to clone rather than a table to grow. `local value = {}` and then
+		one assignment per field makes Luau resize the hash part as it goes,
+		rehashing what it already holds each time; cloning a table that already
+		has the keys allocates once and every assignment lands in a slot that is
+		there. The placeholders are overwritten, and a field decoding to nil
+		clears its key exactly as before.
+	]]
+	local prototype: { [string]: any } = {
+		[n1] = false,
+		[n2] = false,
+		[n3] = false,
+		[n4] = false,
+		[n5] = false,
+	}
+
 	return {
 		size = objectSize,
 
@@ -3019,7 +3089,7 @@ local function object5Unit(
 		end,
 
 		read = function(source: buffer, cursor: number): (any, number)
-			local value = {}
+			local value = table.clone(prototype)
 			local decoded
 
 			decoded, cursor = r1(source, cursor)
@@ -3065,6 +3135,23 @@ local function object6Unit(
 	r5: any,
 	r6: any
 ): Unit
+	--[[
+		A shape to clone rather than a table to grow. `local value = {}` and then
+		one assignment per field makes Luau resize the hash part as it goes,
+		rehashing what it already holds each time; cloning a table that already
+		has the keys allocates once and every assignment lands in a slot that is
+		there. The placeholders are overwritten, and a field decoding to nil
+		clears its key exactly as before.
+	]]
+	local prototype: { [string]: any } = {
+		[n1] = false,
+		[n2] = false,
+		[n3] = false,
+		[n4] = false,
+		[n5] = false,
+		[n6] = false,
+	}
+
 	return {
 		size = objectSize,
 
@@ -3126,7 +3213,7 @@ local function object6Unit(
 		end,
 
 		read = function(source: buffer, cursor: number): (any, number)
-			local value = {}
+			local value = table.clone(prototype)
 			local decoded
 
 			decoded, cursor = r1(source, cursor)
@@ -3351,11 +3438,11 @@ local function optionalUnit(itemUnit: Unit): Unit
 
 		write = function(target: buffer, cursor: number, value: any): number
 			if value == nil then
-				writeU8(target, cursor, 0)
+				buffer.writeu8(target, cursor, 0)
 				return cursor + 1
 			end
 
-			writeU8(target, cursor, 1)
+			buffer.writeu8(target, cursor, 1)
 			return itemWrite(target, cursor + 1, value)
 		end,
 
@@ -3364,10 +3451,10 @@ local function optionalUnit(itemUnit: Unit): Unit
 				local value = values[index]
 
 				if value == nil then
-					writeU8(target, cursor, 0)
+					buffer.writeu8(target, cursor, 0)
 					cursor += 1
 				else
-					writeU8(target, cursor, 1)
+					buffer.writeu8(target, cursor, 1)
 					cursor = itemWrite(target, cursor + 1, value)
 				end
 			end
@@ -3378,7 +3465,7 @@ local function optionalUnit(itemUnit: Unit): Unit
 		read = function(source: buffer, cursor: number): (any, number)
 			ensureReadable(source, cursor, 1)
 
-			local flag = readU8(source, cursor)
+			local flag = buffer.readu8(source, cursor)
 			local valueCursor = cursor + 1
 
 			if flag == 0 then
@@ -3862,7 +3949,7 @@ local function refUnit(kind: string): Unit
 				error(`[VNet]: Instance is not registered as a "{kind}" reference.`, 3)
 			end
 
-			writeU32(target, cursor, id)
+			buffer.writeu32(target, cursor, id)
 
 			return cursor + 4
 		end,
@@ -3876,7 +3963,7 @@ local function refUnit(kind: string): Unit
 					error(`[VNet]: Instance is not registered as a "{kind}" reference.`, 3)
 				end
 
-				writeU32(target, cursor, id)
+				buffer.writeu32(target, cursor, id)
 				cursor += 4
 			end
 
@@ -3886,7 +3973,7 @@ local function refUnit(kind: string): Unit
 		read = function(source: buffer, cursor: number): (any, number)
 			ensureReadable(source, cursor, 4)
 
-			local id = readU32(source, cursor)
+			local id = buffer.readu32(source, cursor)
 			local instance = InstanceRegistry.resolve(kind, id)
 
 			if not instance then
@@ -3905,7 +3992,7 @@ local function refUnit(kind: string): Unit
 			for _index = 1, count do
 				ensureReadable(source, cursor, 4)
 
-				local id = readU32(source, cursor)
+				local id = buffer.readu32(source, cursor)
 				local instance = InstanceRegistry.resolve(kind, id)
 
 				if not instance then
@@ -3929,7 +4016,7 @@ local function refUnit(kind: string): Unit
 			for _index = 1, count do
 				ensureReadable(source, cursor, 4)
 
-				local id = readU32(source, cursor)
+				local id = buffer.readu32(source, cursor)
 				local instance = InstanceRegistry.resolve(kind, id)
 
 				if not instance then
@@ -4205,6 +4292,198 @@ local function flagsUnit(count: number): Unit
 			end
 
 			return mask, cursor + maskSize
+		end,
+	}
+end
+
+--[[
+	Arrays of one fixed-size element, written out per element type.
+
+	The generic array unit calls the element's own read for every entry, and
+	that element then bounds-checks a run the array has already checked as a
+	whole. Fifty vectors in a packet is fifty closure calls and fifty redundant
+	checks, and the array shapes a game actually replicates -- positions, flag
+	sets -- are exactly the ones that pay it most.
+
+	These are the same trade u32ArrayUnit already makes for its own element
+	type: one loop, written once, with the length handling still shared.
+]]
+local function vec3ArrayUnit(
+	lengthSize: number,
+	writeLength: any,
+	readLength: any,
+	minLength: number?,
+	maxLength: number?,
+	limit: number
+): Unit
+	return {
+		measure = function(value: { any }): number
+			local length = #value
+
+			checkWriteLength(length, minLength, maxLength, limit, "array")
+
+			return lengthSize + length * 12
+		end,
+
+		measureMany = function(values: { any }): number
+			local size = 0
+
+			for index = 1, #values do
+				local length = #values[index]
+
+				checkWriteLength(length, minLength, maxLength, limit, "array")
+				size += lengthSize + length * 12
+			end
+
+			return size
+		end,
+
+		write = function(target: buffer, cursor: number, value: { any }): number
+			local length = #value
+
+			checkWriteLength(length, minLength, maxLength, limit, "array")
+			writeLength(target, cursor, length)
+			cursor += lengthSize
+
+			for index = 1, length do
+				local entry = value[index]
+
+				buffer.writef32(target, cursor, entry.X)
+				buffer.writef32(target, cursor + 4, entry.Y)
+				buffer.writef32(target, cursor + 8, entry.Z)
+				cursor += 12
+			end
+
+			return cursor
+		end,
+
+		writeMany = function(target: buffer, cursor: number, values: { any }): number
+			for valueIndex = 1, #values do
+				local value = values[valueIndex]
+				local length = #value
+
+				checkWriteLength(length, minLength, maxLength, limit, "array")
+				writeLength(target, cursor, length)
+				cursor += lengthSize
+
+				for index = 1, length do
+					local entry = value[index]
+
+					buffer.writef32(target, cursor, entry.X)
+					buffer.writef32(target, cursor + 4, entry.Y)
+					buffer.writef32(target, cursor + 8, entry.Z)
+					cursor += 12
+				end
+			end
+
+			return cursor
+		end,
+
+		read = function(source: buffer, cursor: number): (any, number)
+			ensureReadable(source, cursor, lengthSize)
+
+			local size = readLength(source, cursor)
+
+			checkReadLength(size, minLength, maxLength, limit, "array")
+			cursor += lengthSize
+			ensureReadable(source, cursor, size * 12)
+
+			local value = createArray(size)
+
+			for index = 1, size do
+				value[index] = makeVector3(
+					buffer.readf32(source, cursor),
+					buffer.readf32(source, cursor + 4),
+					buffer.readf32(source, cursor + 8)
+				)
+				cursor += 12
+			end
+
+			return value, cursor
+		end,
+	}
+end
+
+local function boolArrayUnit(
+	lengthSize: number,
+	writeLength: any,
+	readLength: any,
+	minLength: number?,
+	maxLength: number?,
+	limit: number
+): Unit
+	return {
+		measure = function(value: { any }): number
+			local length = #value
+
+			checkWriteLength(length, minLength, maxLength, limit, "array")
+
+			return lengthSize + length
+		end,
+
+		measureMany = function(values: { any }): number
+			local size = 0
+
+			for index = 1, #values do
+				local length = #values[index]
+
+				checkWriteLength(length, minLength, maxLength, limit, "array")
+				size += lengthSize + length
+			end
+
+			return size
+		end,
+
+		write = function(target: buffer, cursor: number, value: { any }): number
+			local length = #value
+
+			checkWriteLength(length, minLength, maxLength, limit, "array")
+			writeLength(target, cursor, length)
+			cursor += lengthSize
+
+			for index = 1, length do
+				buffer.writeu8(target, cursor, if value[index] then 1 else 0)
+				cursor += 1
+			end
+
+			return cursor
+		end,
+
+		writeMany = function(target: buffer, cursor: number, values: { any }): number
+			for valueIndex = 1, #values do
+				local value = values[valueIndex]
+				local length = #value
+
+				checkWriteLength(length, minLength, maxLength, limit, "array")
+				writeLength(target, cursor, length)
+				cursor += lengthSize
+
+				for index = 1, length do
+					buffer.writeu8(target, cursor, if value[index] then 1 else 0)
+					cursor += 1
+				end
+			end
+
+			return cursor
+		end,
+
+		read = function(source: buffer, cursor: number): (any, number)
+			ensureReadable(source, cursor, lengthSize)
+
+			local size = readLength(source, cursor)
+
+			checkReadLength(size, minLength, maxLength, limit, "array")
+			cursor += lengthSize
+			ensureReadable(source, cursor, size)
+
+			local value = createArray(size)
+
+			for index = 1, size do
+				value[index] = buffer.readu8(source, cursor) ~= 0
+				cursor += 1
+			end
+
+			return value, cursor
 		end,
 	}
 end
@@ -4566,6 +4845,39 @@ local function compileGuard(guard: Guard): Unit?
 		end
 
 		if CodecState.objectUnit == nil then
+			--[[
+				The field names, lifted out of the guard once.
+
+				`readOrderName` is a function around a rawget, and the loops
+				below called it per field per value: encoding four hundred
+				three-field records went through it twelve hundred times to
+				arrive at the same twelve hundred strings. They do not change
+				after compilation, so they are read here instead.
+			]]
+			local names: { string } = {}
+
+			for index = 1, objectOrderCount do
+				names[index] = readOrderName(order, index)
+			end
+
+			--[[
+				A shape to clone rather than a table to grow.
+
+				`local value = {}` followed by thirteen assignments makes Luau
+				resize the hash part five times over, rehashing every key it
+				already holds each time. Cloning a table that already has the
+				keys allocates the right size once and every assignment after
+				it lands in a slot that is already there.
+
+				The placeholders are overwritten by the decoded field, and a
+				field that decodes to nil clears its key the way it always did.
+			]]
+			local prototype: { [string]: any } = {}
+
+			for index = 1, objectOrderCount do
+				prototype[names[index]] = false
+			end
+
 			CodecState.objectUnit = {
 				size = objectSize,
 
@@ -4577,9 +4889,7 @@ local function compileGuard(guard: Guard): Unit?
 					local size = 0
 
 					for index = 1, objectOrderCount do
-						local name = readOrderName(order, index)
-
-						size += fieldMeasures[index](value[name])
+						size += fieldMeasures[index](value[names[index]])
 					end
 
 					return size
@@ -4596,9 +4906,7 @@ local function compileGuard(guard: Guard): Unit?
 						local value = values[valueIndex]
 
 						for fieldIndex = 1, objectOrderCount do
-							local name = readOrderName(order, fieldIndex)
-
-							size += fieldMeasures[fieldIndex](value[name])
+							size += fieldMeasures[fieldIndex](value[names[fieldIndex]])
 						end
 					end
 
@@ -4607,9 +4915,7 @@ local function compileGuard(guard: Guard): Unit?
 
 				write = function(target: buffer, cursor: number, value: { [string]: any }): number
 					for index = 1, objectOrderCount do
-						local name = readOrderName(order, index)
-
-						cursor = fieldWrites[index](target, cursor, value[name])
+						cursor = fieldWrites[index](target, cursor, value[names[index]])
 					end
 
 					return cursor
@@ -4620,9 +4926,8 @@ local function compileGuard(guard: Guard): Unit?
 						local value = values[valueIndex]
 
 						for fieldIndex = 1, objectOrderCount do
-							local name = readOrderName(order, fieldIndex)
-
-							cursor = fieldWrites[fieldIndex](target, cursor, value[name])
+							cursor =
+								fieldWrites[fieldIndex](target, cursor, value[names[fieldIndex]])
 						end
 					end
 
@@ -4630,14 +4935,13 @@ local function compileGuard(guard: Guard): Unit?
 				end,
 
 				read = function(source: buffer, cursor: number): (any, number)
-					local value = {}
+					local value = table.clone(prototype)
 
 					for index = 1, objectOrderCount do
-						local name = readOrderName(order, index)
 						local decoded
 
 						decoded, cursor = fieldReads[index](source, cursor)
-						value[name] = decoded
+						value[names[index]] = decoded
 					end
 
 					return value, cursor
@@ -4675,9 +4979,23 @@ local function compileGuard(guard: Guard): Unit?
 		local itemSize = item.size
 		local itemMeasure = item.measure
 		local itemWrite = item.write
+		-- An element unit that can write a whole run in one call is asked to.
+		-- Thirty entities in a packet is thirty closure calls into the same
+		-- function otherwise, and the object units already have the loop.
+		local itemWriteMany: ((buffer, number, { any }) -> number)? = item.writeMany
 		local itemRead = item.read
 		local lengthSize, writeLength, readLength = lengthCodec(maxLength)
 		local limit = if maxLength then min(maxLength, MAX_ARRAY_LENGTH) else MAX_ARRAY_LENGTH
+
+		-- The two element types a game replicates in bulk get their loop written
+		-- out rather than called into. See the note on vec3ArrayUnit.
+		if item == units.vec3 then
+			return vec3ArrayUnit(lengthSize, writeLength, readLength, minLength, maxLength, limit)
+		end
+
+		if item == boolUnit then
+			return boolArrayUnit(lengthSize, writeLength, readLength, minLength, maxLength, limit)
+		end
 
 		return {
 			measure = function(value: { any }): number
@@ -4739,6 +5057,10 @@ local function compileGuard(guard: Guard): Unit?
 				writeLength(target, cursor, length)
 				cursor += lengthSize
 
+				if itemWriteMany ~= nil then
+					return itemWriteMany(target, cursor, value)
+				end
+
 				for entryIndex = 1, length do
 					local entry = value[entryIndex]
 					local nextCursor = itemWrite(target, cursor, entry)
@@ -4758,11 +5080,20 @@ local function compileGuard(guard: Guard): Unit?
 					writeLength(target, cursor, length)
 					cursor += lengthSize
 
-					for entryIndex = 1, length do
-						local entry = value[entryIndex]
-						local nextCursor = itemWrite(target, cursor, entry)
+					-- Bound inside the loop: a refinement on the upvalue does not
+					-- survive an iteration, and one local read per value is nothing
+					-- next to the element run it saves.
+					local runWriter = itemWriteMany
 
-						cursor = nextCursor
+					if runWriter ~= nil then
+						cursor = runWriter(target, cursor, value)
+					else
+						for entryIndex = 1, length do
+							local entry = value[entryIndex]
+							local nextCursor = itemWrite(target, cursor, entry)
+
+							cursor = nextCursor
+						end
 					end
 				end
 
@@ -4858,7 +5189,7 @@ function Codec.encodeMany(unit: Unit, payloads: { any }): buffer
 		end
 	end
 
-	local target = createBuffer(size)
+	local target = buffer.create(size)
 	local writeMany = unit.writeMany
 
 	if writeMany then
@@ -4878,7 +5209,7 @@ function Codec.encodeMany(unit: Unit, payloads: { any }): buffer
 end
 
 function Codec.encodeOne(unit: Unit, payload: any): buffer
-	local target = createBuffer(unit.measure(payload))
+	local target = buffer.create(unit.measure(payload))
 
 	unit.write(target, 0, payload)
 
